@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Simplestat Monitoring Status</title>
+</head>
+<meta http-equiv="refresh" content="5"/>
+<style type="text/css">
+<!--/* <![CDATA[ */
+body{background-color:green;padding:0;margin:0;font:36px Helvetica;font-weight:bold}
+#main{text-align:center;}
+#title{font-size:72px;font-weight:bold;text-transform:capitalize;text-align:center}
+#footer{background-image:url(../myjob.png);background-repeat:no-repeat;background-position:bottom center;}
+.down{background-color:red;padding:0.5em 0;border-bottom:1px solid white;text-transform: uppercase;}
+.critical{background-color:#ff4300;padding:0.5em 0;border-bottom:1px solid white}
+.warning{background-color:orange;padding:0.5em 0;border-bottom:1px solid white}
+.ok{color:white;font-size:36px;margin-top:0.5em}
+.vertical{position:absolute;left:0;-webkit-transform: rotate(-90deg); -moz-transform: rotate(-90deg);}
+
+
+/* ]]> */-->
+</style>
+<body>
+<div id="main">
+  [% IF hosts.size != 0 %]
+     [% FOREACH host = hosts %]
+        [% IF host.state == 1 %]
+<div class="down">&#8224; [% host.name %] &#8224;</div>
+        [% END %]
+     [% END %]
+  [% END %]
+
+  [% IF services.size == 0 %]
+
+  [% ELSE %]
+     [% FOREACH svc = services %]
+        [% IF svc.state == 2 %]
+<div class="critical"> [% svc.host_name %] &rarr; [% svc.description %]</div>
+        [% END %]
+     [% END %]
+
+  [% FOREACH svc = services %]
+        [% IF svc.state == 1 %]
+<div class="warning"> [% svc.host_name %] &rarr; [% svc.description %]</div>
+        [% END %]
+     [% END %]
+  [% END %]
+  [% critnum = servicestats.critical_and_unhandeled %]
+  [% warnnum = servicestats.warning_and_unhandled %]
+  [% unknum = servicestats.unknown_and_unhandled %]
+  [% totnum = critnum + warnnum + unknum %]
+  <div class="ok">OK<br><small>Hosts: [% hoststats.down %] / [% hoststats.total %] ( [% 100 / hoststats.total * hoststats.up | format('%.02f') %]% ) Services: [% totnum %] / [% servicestats.total %] ( [% 100 / servicestats.total * servicestats.ok | format('%.02f') %]% )</small> </div>
+</div>
+
+</body>
+</html>
