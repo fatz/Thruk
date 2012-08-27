@@ -8,7 +8,7 @@ use parent 'Catalyst::Controller';
 
 =head1 NAME
 
-Thruk::Controller::wml - Catalyst Controller
+Thruk::Controller::simplestat - Catalyst Controller
 
 =head1 DESCRIPTION
 
