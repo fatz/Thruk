@@ -72,8 +72,9 @@ function add_conf_attribute(table, key, rt) {
     // return id of new added input
     if(rt != undefined && rt == true) {
         var inp     = newObj.cells[2].innerHTML;
-        var matches = inp.match(/id="(.*?)"/);
+        var matches = inp.match(/id=([^\s]+?)\s/);
         if(matches != null) {
+            var id = matches[1].replace('"', '');
             return matches[1];
         }
     }
@@ -101,8 +102,21 @@ function remove_conf_attribute(key, nr) {
 
 /* initialize all buttons */
 function init_conf_tool_buttons() {
+    jQuery('INPUT.conf_button').button();
+    jQuery('BUTTON.conf_button').button();
+    jQuery('.radioset').buttonset();
+
     jQuery('.conf_save_button').button({
         icons: {primary: 'ui-save-button'}
+    });
+    jQuery('.conf_apply_button').button({
+        icons: {primary: 'ui-apply-button'}
+    });
+    jQuery('.conf_back_button').button({
+        icons: {primary: 'ui-l-arrow-button'}
+    });
+    jQuery('.conf_save_reload_button').button({
+        icons: {primary: 'ui-save_reload-button'}
     });
 
     jQuery('.conf_preview_button').button({
@@ -167,6 +181,7 @@ function init_conf_tool_buttons() {
 
         jQuery.ajax({
             url: 'conf.cgi?action=json&amp;type=dig&host='+host,
+            type: 'POST',
             success: function(data) {
                 jQuery('#attr_table').find('.obj_address').val(data.address).effect('highlight', {}, 1000);
             }
@@ -259,7 +274,7 @@ function update_command_line(id) {
     // not a full command
     if(ajax_search && ajax_search.base && ajax_search.base[0] && ajax_search.base[0].data) {
         var found = 0;
-        ajax_search.base[0].data.each(function(elem) {
+        jQuery.each(ajax_search.base[0].data, function(nr, elem) {
             if(elem == cmd_name) { found++; }
         });
         if(found == 0) {
@@ -274,6 +289,7 @@ function update_command_line(id) {
 
     jQuery.ajax({
         url: 'conf.cgi?action=json&amp;type=commanddetails&command='+cmd_name,
+        type: 'POST',
         success: function(data) {
             hideElement(id + 'wait');
             var cmd_line = data[0].cmd_line;
@@ -440,6 +456,7 @@ function load_plugin_help(id, plugin) {
 
     jQuery.ajax({
         url: 'conf.cgi?action=json&amp;type=pluginhelp&plugin='+plugin,
+        type: 'POST',
         success: function(data) {
             hideElement(id + 'wait_help');
             var plugin_help = data[0].plugin_help;
@@ -473,6 +490,7 @@ function check_plugin_exec(id) {
 
     jQuery.ajax({
         url: 'conf.cgi?action=json&amp;type=pluginpreview&command='+command+'&host='+host+'&service='+service+'&args='+args,
+        type: 'POST',
         success: function(data) {
             hideElement(id + 'wait_run');
             var plugin_output = data[0].plugin_output;
@@ -518,7 +536,7 @@ function init_conf_tool_list_wizard(id, type) {
     selected_members   = new Array();
     selected_members_h = new Object();
     var options = [];
-    var list = jQuery('#'+input_id).val().split(/,/);
+    var list = jQuery('#'+input_id).val().split(/\s*,\s*/);
     for(var x=0; x<list.length;x+=aggregate) {
         if(list[x] != '') {
             var val = list[x];
@@ -539,6 +557,7 @@ function init_conf_tool_list_wizard(id, type) {
     jQuery("select#"+id+"available_members").html('<option disabled>loading...<\/option>');
     jQuery.ajax({
         url: 'conf.cgi?action=json&amp;type='+type,
+        type: 'POST',
         success: function(data) {
             var result = data[0]['data'];
             var options = [];
@@ -605,9 +624,9 @@ function new_attr_filter(str) {
 /* new attribute onselect */
 var newid, inp;
 function on_attr_select() {
-    newid = add_conf_attribute('attr_table', jQuery('#newattr').val(),true);
+    newid = "#"+add_conf_attribute('attr_table', jQuery('#newattr').val(),true).replace(/"/g, '');
     ajax_search.reset();
-    window.setTimeout('jQuery(\'#\'+newid).focus()', 300);
+    window.setTimeout('ajax_search.hide_results(null, 1);jQuery(\''+newid+'\').focus();', 300);
     return newid;
 }
 
@@ -626,4 +645,14 @@ function on_empty_click(inp) {
     }
     newin.name = 'obj.'+td.value;
     return false;
+}
+
+/* validate objects edit form */
+function conf_validate_object_form(f) {
+    var fileselect = jQuery(f).find('#fileselect').first().val();
+    if(fileselect != undefined && fileselect == "") {
+        alert("please enter filename for this object.");
+        return false;
+    }
+    return true;
 }

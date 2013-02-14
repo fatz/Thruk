@@ -1,4 +1,4 @@
-/* show settings window */
+﻿/* show settings window */
 TP.settingsWindow = function() {
 
     /* stop rotation */
@@ -9,7 +9,7 @@ TP.settingsWindow = function() {
         bodyPadding: 5,
         border:      0,
         defaults: {
-            labelWidth:  120,
+            labelWidth:  100,
             anchor: '99%'
         },
         items: [{
@@ -40,6 +40,16 @@ TP.settingsWindow = function() {
                 nameS:      'rotate_tabs',
                 nameL:      'rotate_tabs_txt'
             }
+        }, {
+            /* show server time */
+            xtype:      'checkbox',
+            fieldLabel: 'Show Server Time',
+            name:       'server_time'
+        }, {
+            /* auto hide panlet header */
+            xtype:      'checkbox',
+            fieldLabel: 'Autohide Panlet Header',
+            name:       'autohideheader'
         }, {
             /* Import / Export */
             xtype: 'panel',
@@ -91,7 +101,7 @@ TP.settingsWindow = function() {
                         if (button === 'yes') {
                             TP.importAllTabs(default_view);
                             win_settings.close();
-                            Ext.MessageBox.alert('Success', 'Reset Successful!');
+                            Ext.MessageBox.alert('Success', 'Reset Successful!<br>Please wait while page reloads...');
                         }
                     });
                 }
@@ -113,6 +123,7 @@ TP.settingsWindow = function() {
             tab.saveState();
             win.destroy();
             TP.startRotatingTabs();
+            TP.startServerTime();
             /* start refresh for all panlets with global refresh rate */
             var panels = TP.getAllPanel();
             for(var nr in panels) {
@@ -120,6 +131,7 @@ TP.settingsWindow = function() {
                 if(p.xdata.refresh == -1) {
                     p.startInterval();
                 }
+                if(tab.xdata.autohideheader) { p.header.hide() } else { p.header.show() }
             }
             return true;
         }

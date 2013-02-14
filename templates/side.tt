@@ -22,12 +22,13 @@
   </head>
   <body class='navbar'>
 [% END %]
-    <a href="http://www.thruk.org" target="_blank"><img src="[% url_prefix %]thruk/themes/[% theme %]/images/logo_thruk_small.png" border="0" alt="Thruk" title="Thruk" width="130" height="40" class="nav_small_logo" /></a>
+    <a href="[% home_link %]" target="_blank"><img src="[% url_prefix %]thruk/themes/[% theme %]/images/logo_thruk_small.png" border="0" alt="Thruk" title="Thruk" width="130" height="40" class="nav_small_logo" /></a>
 
     [% FOREACH section = navigation %]
+    [% cookie_section_name = section.name.replace(' ', '_') | lower %]
     <div class="navsection">
-      <div class="navsectiontitle">[% section.name %]</div>
-      <div class="navsectionlinks">
+      <div class="navsectiontitle clickable">[% section.name %]</div>
+      <div class="navsectionlinks"[% IF menu_states.exists(cookie_section_name) && menu_states.$cookie_section_name == 0 %] style="display:none;"[% END %]>
       [%+ FOREACH link = section.links %]
         <ul class="navsectionlinks">
           [%+ IF link.href %]
@@ -52,9 +53,9 @@
                 <legend>[% link.name %]</legend>
                 [% IF use_new_search%]
                 <input type='hidden' name='hidesearch' value='2' />
-                <input type='hidden' name='s0_op' value='~' />
+                <input type='hidden' name='s0_op' value='~' id="s0_to" />
                 <input type='hidden' name='s0_type' value='search' />
-                <input type='text' name='s0_value' size='15' class="NavBarSearchItem" id="NavBarSearchItem" />
+                <input type='text' name='s0_value' size='15' class="NavBarSearchItem" id="s0_value" />
                 [% ELSE %]
                 <input type='hidden' name='navbarsearch' value='1' />
                 <input type='text' name='host' size='15' class="NavBarSearchItem" id="NavBarSearchItem" />
@@ -75,6 +76,8 @@
     <img src="[% url_prefix %]thruk/themes/[% theme %]/images/orangedot.gif" class="hidepics" alt="" width="0" height="0" />
 
 [% PROCESS _ajax_search.tt %]
+
+[% PROCESS _side_js.tt %]
 
 [% IF use_frames %]
   </body>

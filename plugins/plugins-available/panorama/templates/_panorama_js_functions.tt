@@ -1,4 +1,4 @@
-/* send debug output to firebug console */
+﻿/* send debug output to firebug console */
 function debug(str) {
     if (window.console != undefined) {
         console.debug(str);
@@ -250,6 +250,7 @@ var TP = {
                 f.setValue(v);
             }
             else if(f.inputType == 'checkbox') {
+                f.setValue(v);
                 f.originalValue = v;
             } else {
                 f.originalValue = [ v ];
@@ -259,8 +260,9 @@ var TP = {
         });
 
         /* checkbox groups are different */
-        for(var i in form.items) {
-            var f = form.items[i];
+        var items = form.getFields().items;
+        for(var i in items) {
+            var f = items[i];
             if(f.xtype == 'checkboxgroup') {
                 f.removeAll();
                 for(var x in initial_backends) {
@@ -282,8 +284,9 @@ var TP = {
             data[key] = values[key];
         };
         /* checkboxgroups are different */
-        for(var i in form.items) {
-            var f = form.items[i];
+        var items = form.getFields().items;
+        for(var i in items) {
+            var f = items[i];
             if(f.xtype == 'checkboxgroup') {
                 var result = {};
                 var checked = f.getChecked();
@@ -321,6 +324,7 @@ var TP = {
                 panel.loader.baseParams = {};
             }
             var baseParams = Ext.merge(panel.loader.baseParams, panel.xdata);
+            delete baseParams['gridstate']; // not needed
             panel.loader.load({url:url, baseParams: baseParams});
         }
     },
@@ -352,20 +356,13 @@ var TP = {
         cp.clearAll();
         cp.loadData(data);
         Ext.getCmp('viewport').add(new TP.TabBar());
-        window.location.reload();
+        window.setTimeout("window.location.reload()", 1000);
     },
     /* eval response data */
     getResponse: function(panlet, response) {
         var refresh = {setType: Ext.emptyFn };
         if(panlet != undefined) {
-            for(var nr in panlet.tools) {
-                if(panlet.tools[nr].type == 'refresh') {
-                    refresh = panlet.tools[nr];
-                }
-                if(panlet.tools[nr].type == 'broken') {
-                    refresh = panlet.tools[nr];
-                }
-            }
+            refresh = panlet.getTool('refresh') || panlet.getTool('broken');
         }
         if(response.status == 200) {
             var data;
@@ -380,8 +377,8 @@ var TP = {
             /* extract pi details */
             if(data.pi_detail != undefined) {
                 for(var key in data.pi_detail) {
-                    initial_backends[key].state         = data.pi_detail[key].state;
-                    initial_backends[key].program_start = data.pi_detail[key].program_start;
+                    initial_backends[key].state         = data.pi_detail[key]['state'];
+                    initial_backends[key].program_start = data.pi_detail[key]['program_start'];
                 }
             }
             /* contains a message? */
@@ -389,9 +386,12 @@ var TP = {
             if(msg) {
                 TP.Msg.msg(msg);
                 // clear message
-                var now = new Date();
-                var expires = new Date(now.getTime() - (10*365*86400*1000)); // let the cookie expire 10 year ago
-                Ext.util.Cookies.set('thruk_message', null, expires);
+                Ext.util.Cookies.clear('thruk_message', '[% cookie_path %]');
+            }
+            if(data.errors) {
+                for(var nr in data.errors) {
+                    TP.Msg.msg("fail_message~~"+data.errors[nr].message);
+                }
             }
             return data;
         }
@@ -413,11 +413,31 @@ var TP = {
     /* start tab rotation interval */
     startRotatingTabs: function() {
         var tabpan = Ext.getCmp('tabpan');
-        window.clearInterval(tabpan.interval);
+        window.clearInterval(tabpan.interval_rotatetabs);
         if(tabpan.xdata.rotate_tabs > 0) {
             debug("starting tab rotation every " + tabpan.xdata.rotate_tabs + "seconds");
-            tabpan.interval = window.setInterval(TP.rotateTabs, tabpan.xdata.rotate_tabs * 1000);
+            tabpan.interval_rotatetabs = window.setInterval(TP.rotateTabs, tabpan.xdata.rotate_tabs * 1000);
         }
+    },
+    /* start server time */
+    startServerTime: function() {
+        var tabpan = Ext.getCmp('tabpan');
+        window.clearInterval(tabpan.interval_servertime);
+        var label = Ext.getCmp('server_time');
+        if(!tabpan.xdata.server_time) {
+            label.hide();
+            return;
+        }
+        label.show();
+        tabpan.interval_servertime = window.setInterval(TP.updateServerTime, 1000);
+    },
+    /* update server time */
+    updateServerTime: function() {
+        var label  = Ext.getCmp('server_time');
+        var client = new Date();
+        var time   = Math.floor((client.getTime() - delta_time) / 1000);
+        var date   = TP.date_format(time, 'H:i');
+        label.update(date);
     },
     /* stop tab rotation interval */
     stopRotatingTabs: function() {
@@ -500,5 +520,29 @@ var TP = {
             return false;
         }
         return true;
+    },
+    /* called on body unload */
+    unload: function() {
+        try {
+            // try saving state
+            cp.saveChanges(false);
+        }
+        catch(e) {}
+    },
+    deleteDowntime: function(id, panelId, type) {
+        var panel = Ext.getCmp(panelId);
+        var fields = [{
+            fieldLabel: '',
+            xtype:      'displayfield',
+            value:      'no options needed',
+            name:       'display',
+            width:      240
+        }, {
+            xtype: 'hidden', name: 'down_id', value: id
+        }];
+        var menuCfg = TP.ext_menu_command('Remove', (type == 'host' ? 78 : 79), fields);
+        var menu = new Ext.menu.Menu(menuCfg);
+        panel.add(menu);
+        menu.show();
     }
 }

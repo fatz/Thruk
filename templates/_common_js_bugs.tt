@@ -5,6 +5,19 @@ window.onerror = function(msg, url, line) {
   try {
     thruk_errors.unshift("Url: "+url+" Line "+line+"\nError: " + msg);
 
+    // hide errors from saved pages
+    if(window.location.protocol != 'http:' && window.location.protocol != 'https:') { return false; }
+
+    // hide errors in line 0
+    if(line == 0) { return false; }
+
+    // skip some errors
+    [%+ FOREACH skip = skip_js_errors.list %]
+    if(msg.match(/[% skip %]/)) {
+      return false;
+    }
+    [% END +%]
+
     var link = document.getElementById('bug_report-btnEl');
     if(link) {
         var text = "Please describe what you did:\n\n\n\n\nMake sure the report does not contain confidential information.\n\n---------------\n";
@@ -23,7 +36,7 @@ window.onerror = function(msg, url, line) {
         for(var nr in thruk_errors) {
             text = text + thruk_errors[nr]+"\n";
         }
-        link.href="mailto:bugs@thruk.org?subject="+encodeURIComponent("Thruk JS Error Report")+"&body="+encodeURIComponent(text);
+        link.href="mailto:[% bug_email_rcpt %]?subject="+encodeURIComponent("Thruk JS Error Report")+"&body="+encodeURIComponent(text);
     }
     showBugReport('bug_report');
   }
@@ -45,4 +58,3 @@ function showBugReport(id) {
     }
   }
 }
-

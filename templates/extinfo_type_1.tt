@@ -1,6 +1,7 @@
-﻿[% PROCESS _header.tt %]
-[% USE date %]
+﻿[% USE date %]
+[% PROCESS _header.tt %]
 [% PROCESS _message.tt %]
+[% PROCESS custom_perf_bar_adjustments.tt %]
 
 [% SET peer_key      = host.peer_key %]
 [% SET program_start = pi_detail.$peer_key.program_start %]
@@ -99,17 +100,17 @@
               </td>
             </tr>
           [% END %]
-          [% IF custom_vars.keys.size > 0 %]
+          [% IF custom_vars.size > 0 %]
             <tr>
               <td align='right'>
                 <table>
-                  [% FOREACH cust = custom_vars.keys.sort %]
+                  [% FOREACH cust = custom_vars %]
                   <tr>
                     <td style="padding-right: 7px;">
-                      <font size="-1"><i>[% cust %]</i></font><br clear="all">
+                      <font size="-1"><i>[% cust.0 %]</i></font><br clear="all">
                     </td>
                     <td>
-                      <font size="-1">[% custom_vars.$cust %]</font>
+                      <font size="-1">[% cust.1 %]</font>
                     </td>
                   </tr>
                   [% END %]
@@ -166,7 +167,10 @@
                           </tr>
                           <tr>
                             <td class='dataVar' valign='top'>Performance Data:</td>
-                            <td class='dataVal'>[% host.perf_data %]</td>
+                            <td class='dataVal'>
+                                [% PROCESS _perfdata_table.tt write="true" state=host.state plugin_output=host.plugin_output perfdata=host.perf_data check_command=host.check_command hst=host.name svc="_HOST_" %]
+                                [% host.perf_data %]
+                            </td>
                           </tr>
                           <tr>
                             <td class='dataVar'>Current Attempt:</td>
@@ -458,6 +462,12 @@
               </tr>
             </table>
             <table border="0" class="commandPanel">
+              [% IF source %]
+              <tr>
+                <th class='comment' nowrap>Source</th>
+                <td class='comment'><pre class="no_margin config_info">[% source %]</pre></td>
+              </tr>
+              [% END %]
               <tr>
                 <th class='comment' nowrap>Check Command</th>
                 <td class='comment'>

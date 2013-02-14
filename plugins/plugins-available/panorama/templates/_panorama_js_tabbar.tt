@@ -1,3 +1,4 @@
+﻿[% USE date %]
 Ext.define('TP.TabBar', {
     extend: 'Ext.tab.Panel',
 
@@ -15,20 +16,34 @@ Ext.define('TP.TabBar', {
             tooltip:  'Test',
             handler:  TP.test
         }, {
+            xtype:    'label',
+            text:     '[% date_format(c, date.now, "%H:%M") %]',
+            id:       'server_time',
+            tooltip:  'server time',
+            style:    'margin-top: 3px',
+            width:    35,
+            height:   16
+        }, {
             id:       'bug_report',
-            closable: false,
-            minWidth: 28,
+            closable:  false,
+            minWidth:  28,
             iconCls:  'bug-tab',
             href:     '#',
+            html:     'Report',
             tooltip:  'Send Bug Report'
         }, {
-            title: '',
-            closable: false,
-            minWidth: 28,
-            iconCls: 'gear-tab',
-            tooltip:  'Menu',
+            iconCls:  'user-tab',
+            closable:  false,
+            tooltip:  'user menu',
+            arrowCls: 'arrow x-btn-arrow-right x-btn-arrow',
+            html:     '[% remote_user %]&nbsp;&nbsp;',
             menu: {
-                items: [{
+                items: [/*{
+                        text: 'Switch User',
+                        icon: '[% url_prefix %]thruk/plugins/panorama/images/cup_key.png',
+                        handler: function() {}
+                }*/
+               {
                         text: 'About',
                         icon: '[% url_prefix %]thruk/plugins/panorama/images/information.png',
                         handler: function() { TP.aboutWindow() }
@@ -37,8 +52,37 @@ Ext.define('TP.TabBar', {
                         icon: '[% url_prefix %]thruk/plugins/panorama/images/cog.png',
                         handler: function() { TP.settingsWindow() }
                     },
+                    /* Exit */
+                    '-',
+                    [% IF cookie_auth %]
+                    {
+                        text:   'Logout',
+                        icon:   '[% url_prefix %]thruk/plugins/panorama/images/door_in.png',
+                        handler: function() {
+                            window.location = 'login.cgi?logout';
+                        }
+                    },
+                    [% END %]
+                    {
+                        text:   'Exit Panorama View',
+                        icon:   '[% url_prefix %]thruk/plugins/panorama/images/exit.png',
+                        handler: function() {
+                            window.location = '../';
+                        }
+                    }
+                ]
+            }
+        }, {
+            title: '',
+            closable: false,
+            minWidth: 28,
+            iconCls: 'gear-tab',
+            tooltip:  'add panlets',
+            arrowCls: 'arrow x-btn-arrow-right x-btn-arrow',
+            html:     ' ',
+            menu: {
+                items: [{
                     /* Server */
-                    '-', {
                         text:   'Site Status',
                         icon:   '[% url_prefix %]thruk/plugins/panorama/images/server.png',
                         handler: function() { TP.add_panlet({type:'TP.PanletGridServer'}) }
@@ -112,14 +156,6 @@ Ext.define('TP.TabBar', {
                         text:    'Generic Url Panlet',
                         icon:    '[% url_prefix %]thruk/plugins/panorama/images/html_add.png',
                         handler: function() { TP.add_panlet({type:'TP.PanletUrl'}) }
-                    },
-                    /* Exit */
-                    '-' , {
-                        text:   'Exit Panorama View',
-                        icon:   '[% url_prefix %]thruk/plugins/panorama/images/exit.png',
-                        handler: function() {
-                            window.location = '../';
-                        }
                     }
                 ]
             }
@@ -130,9 +166,11 @@ Ext.define('TP.TabBar', {
 
         /* global default setttings */
         this.xdata = {
-            refresh:     60,
-            rotate_tabs:  0,
-            backends:    []
+            refresh:        60,
+            rotate_tabs:     0,
+            backends:       [],
+            server_time:    true,
+            autohideheader: false
         }
         [%+ FOREACH b = backend_detail.keys %]
         [%+ IF backend_detail.$b.state == 0 || backend_detail.$b.state == 1 %]this.xdata.backends.push('[% b %]');[% END +%]
@@ -144,6 +182,9 @@ Ext.define('TP.TabBar', {
             return TP.add_pantab();
         });
 
+        this.addListener('afterrender', function(This, eOpts) {
+            TP.startServerTime();
+        });
     },
     getState:   function() {
         var item_ids = [];
@@ -160,14 +201,25 @@ Ext.define('TP.TabBar', {
         }
     },
     applyState: function(state) {
-        if(state) {
-            this.xdata = state.xdata;
-            for(nr in state.item_ids) {
-                TP.add_pantab(state.item_ids[nr]);
-            };
-            this.setActiveTab(state.activeTab);
-            Ext.apply(this, state);
+        try {
+            if(state) {
+                    this.xdata = state.xdata;
+                    for(nr in state.item_ids) {
+                        TP.add_pantab(state.item_ids[nr]);
+                    };
+                this.setActiveTab(state.activeTab);
+                Ext.apply(this, state);
+            }
             TP.startRotatingTabs();
+            TP.startServerTime();
+        } catch(e) {
+            debug(e);
+            if(confirm("Errors while loading your saved settings:\n\n"+e+"\n\nStart over with a clean view?\nAll panorama view settings will be deleted.")) {
+                [%+ IF stateprovider == 'cookie' +%]
+                try { cp.clearAll(); } catch(e) {}
+                [%+ END +%]
+                window.location = 'panorama.cgi?clean=1';
+            }
         }
     },
     items: [{

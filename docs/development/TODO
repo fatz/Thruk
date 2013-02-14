@@ -1,13 +1,13 @@
 Todo & Wish List:
 =========================================================
 
-Bugs: none
+Packages:
+  - security issue with chown in postinst:
+    http://lists.debian.org/debian-devel/2012/05/msg00533.html
 
 Features:
 
 general:
-    - webservice api, passthrough querys to livestatus and return json
-      result
     - show parent tree to backend, ex.: host1 -> host2 -> parent -> monitor
     - show host/service dependencies
     - add context sensitive help
@@ -15,11 +15,9 @@ general:
     - add output filter plugins (ex.: check_multi, disk checks)
     - add backend name to logs
     - add go back button on error page
-    - support more macros
     - include comments in export
-
-extinfo:
-    - finish performance data on extinfo type 4
+    - add recurring downtimes for host/servicegroups
+    - suggest custom variables?
 
 config:
     - add missing values
@@ -53,10 +51,8 @@ reports:
     - flexible report output
         HTML, Text, CVS, XML, PDF
         CSV output for single hosts/services,hostgroups/servicegroups
-
-status:
-    - add flexible selector, ex.: select multiple hostgroups by comma
-    - host table map with worst service state as color
+    - use mongodb with cursors
+    - utf-8 mails: https://rt.cpan.org/Public/Bug/Display.html?id=42481
 
 histogram:
     - missing completly
@@ -72,7 +68,18 @@ addons:
       contacts)
     - nagios.cfg editor (with omd support)
     - resource.cfg editor
-    - template usage with +object ( in resolve and template tt view)
     - wizards: new host, scan services
-    - sync multiple backend with config tool
 
+  panorama:
+    - allow multiple filter
+
+
+
+=========================================
+Version 2
+
+Themes:
+    - only include Thruk theme and make others downloadable
+    - same for plugins
+
+Deprecate reports plugin

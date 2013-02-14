@@ -1,4 +1,6 @@
-﻿    <table border="0" width="100%" class='status servicestatus' id="statusTable">
+﻿[% PROCESS custom_perf_bar_adjustments.tt %]
+
+    <table border="0" width="100%" class='status servicestatus' id="statusTable" onmouseout='reset_all_hosts_and_services();'>
       <tr>
         <th class='status' nowrap>Host&nbsp;<a href='[%       short_uri(c, ${"sorttype$sortprefix"} => 1, ${"sortoption$sortprefix"} => 1) %]'><img src='[% url_prefix %]thruk/themes/[% theme %]/images/up.gif' border="0" alt='Sort by host name (ascending)' title='Sort by host name (ascending)'></a><a href='[%             short_uri(c, ${"sorttype$sortprefix"} => 2, ${"sortoption$sortprefix"} => 1) %]'><img src='[% url_prefix %]thruk/themes/[% theme %]/images/down.gif' border="0" alt='Sort by host name (descending)' title='Sort by host name (descending)'></a></th>
         [% IF show_backends_in_table == 2 %]
@@ -69,7 +71,7 @@
         </td>
         [% END %]
         [% IF show_backends_in_table == 2 %]
-        <td class='[% serviceclass %]' align="center" nowrap>[% s.peer_name %]</td>
+        <td class='[% serviceclass %] backend_[% peer_key %]' align="center" nowrap>[% s.peer_name %]</td>
         [% END %]
         <td class='[% serviceclass %]'>
           <table border="0" width='100%' cellspacing="0" cellpadding="0">
@@ -86,7 +88,7 @@
         <td class='[% serviceclass %]' nowrap>[% IF s.last_state_change %][% duration(date.now - s.last_state_change) %][% ELSE %][% duration(date.now - program_start) %]+[% END %]</td>
         <td class='[% serviceclass %]' align="center">[% s.current_attempt %]/[% s.max_check_attempts %][% IF show_notification_number %] [% IF s.current_notification_number > 0 %] <span title="This service has send out [% s.current_notification_number %] notifications">#[% s.current_notification_number %]</span>[% END %][% IF s.first_notification_delay > 0 %][% first_remaining = calculate_first_notification_delay_remaining(s) %][% IF first_remaining >= 0 %] <span title="This service will send out notifications in [% first_remaining %] minutes">~[% first_remaining %]min</span>[% END %][% END %][% END %]</td>
         [% IF show_backends_in_table == 1 %]
-        <td class='[% serviceclass %]' align="center" nowrap>[% s.peer_name %]</td>
+        <td class='[% serviceclass %] backend_[% peer_key %]' align="center" nowrap>[% s.peer_name %]</td>
         [% END %]
           [% IF s.has_been_checked == 0 %]
             <td class='[% serviceclass %]' align="left">
@@ -97,30 +99,52 @@
               [% END %]
             </td>
           [% ELSE %]
+            <td align="left" class='[% serviceclass %]'
             [% IF s.long_plugin_output and show_long_plugin_output != 'off' %]
               [% IF show_long_plugin_output == 'popup' %]
                 [% IF escape_html_tags %]
-                  <td align="left" class='[% serviceclass %]' [% info_popup_event_type %]="return overlib(this.abbr,CAPTION,'[% s.host_display_name %] - [% s.display_name %]',WIDTH,600,[% c.config.info_popup_options %]);" abbr='[% escape_html(escape_html(s.plugin_output)) %]<br>[% escape_html(nl2br(escape_html(s.long_plugin_output))) %]'><span class="has_long_plugin_output">[% escape_html(s.plugin_output) %]</span></td>
+                  [% info_popup_event_type %]="return overlib(this.abbr,CAPTION,'[% s.host_display_name %] - [% s.display_name %]',WIDTH,600,[% c.config.info_popup_options %]);" abbr='[% escape_html(escape_html(s.plugin_output)) %]<br>[% escape_html(nl2br(escape_html(s.long_plugin_output))) %]'
                 [% ELSE %]
-                  <td align="left" class='[% serviceclass %]' [% info_popup_event_type %]="return overlib(this.abbr,CAPTION,'[% s.host_display_name %] - [% s.display_name %]',WIDTH,600,[% c.config.info_popup_options %]);" abbr='[% escape_html(s.plugin_output) %]<br>[% nl2br(escape_html(s.long_plugin_output)) %]'><span class="has_long_plugin_output">[% s.plugin_output %]</span></td>
+                  [% info_popup_event_type %]="return overlib(this.abbr,CAPTION,'[% s.host_display_name %] - [% s.display_name %]',WIDTH,600,[% c.config.info_popup_options %]);" abbr='[% escape_html(s.plugin_output) %]<br>[% nl2br(escape_html(s.long_plugin_output)) %]'
                 [% END %]
-              [% ELSIF show_long_plugin_output == 'inline' %]
-                [% IF escape_html_tags %]
-                  <td align="left" class='[% serviceclass %]'>[% escape_html(s.plugin_output) %]<br>[% nl2br(escape_html(s.long_plugin_output)) %]</td>
-                [% ELSE %]
-                  <td align="left" class='[% serviceclass %]'>[% s.plugin_output %]<br>[% nl2br(s.long_plugin_output) %]</td>
-                [% END %]
-              [% END %]
-            [% ELSE %]
-              [% IF escape_html_tags %]
-                <td align="left" class='[% serviceclass %]'>[% escape_html(s.plugin_output) %]</td>
-              [% ELSE %]
-                <td align="left" class='[% serviceclass %]'>[% s.plugin_output %]</td>
               [% END %]
             [% END %]
+            >
+            [% pnp_url = get_pnp_url(c, s, 1) %]
+            [% PROCESS _perfdata_table.tt write="true" state=s.state plugin_output=s.plugin_output perfdata=s.perf_data check_command=s.check_command hst=s.host_name svc=s.description %]
+
+            [% IF s.long_plugin_output and show_long_plugin_output == 'popup' %]
+              [% IF escape_html_tags %]<span class="has_long_plugin_output">[% escape_html(s.plugin_output) %]</span>[% ELSE %]<span class="has_long_plugin_output">[% s.plugin_output %]</span>[% END %]
+            [% ELSE %]
+              [% IF escape_html_tags %][% escape_html(s.plugin_output) %][% ELSE %][% s.plugin_output %][% END %]
+            [% END %]
+
+            [% IF s.long_plugin_output and show_long_plugin_output == 'inline' %]
+              [% IF escape_html_tags %]
+                <br>[% nl2br(escape_html(s.long_plugin_output)) %]
+              [% ELSE %]
+                <br>[% nl2br(s.long_plugin_output) %]
+              [% END %]
+            [% END %]
+            </td>
           [% END %]
       </tr>
       [% SET lasthost = s.host_name %]
       [% END %]
 
     </table>
+
+    [% IF data.size == 0 && num_hosts > 0 %]
+      <div style="text-align: center;">
+      <a href="[% uri_with(c, 'style' => 'hostdetail') %]" style="color: red;">
+      Found 0 matching services, but there
+      [% IF num_hosts == 1 %]
+      is 1 matching host.
+      [% ELSE %]
+      are [% num_hosts %] matching hosts.
+      [% END %]
+      </a>
+      <br>
+      </div>
+      <br>
+    [% END %]

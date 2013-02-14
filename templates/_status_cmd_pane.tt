@@ -2,7 +2,7 @@
 <div class="cmd_pane" id="cmd_pane">
 <div class="shadow"><div class="shadowcontent">
 <form action="cmd.cgi" method="POST" id="quick_cmd_form">
-  <input type="hidden" name="referer" value="[% clean_referer(short_uri(c)) %]">
+  <input type="hidden" name="referer" value="[% clean_referer(short_uri(c)) %]" id="form_cmd_referer">
   <input type="hidden" name="selected_services" id="selected_services" value="">
   <input type="hidden" name="selected_hosts"    id="selected_hosts"    value="">
   <table class="cmd_pane" border=1 width="400">
@@ -33,40 +33,48 @@
       <td class="statusOdd">
         <input type='hidden' id="opt_persistent" name='persistent' value="comments">
         <select name="quick_command" id="quick_command" onChange="check_selected_command(this.value)">
+          [% need_spacer = 0 %]
           [% IF c.config.cmd_quick_status.reschedule %]
-          <option value="1" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/delay.gif); }">reschedule next check</option>
-          <option value="" disabled class="disable">-------------------------</option>
+            <option value="1" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/delay.gif); }"[% IF c.config.cmd_quick_status.default == "reschedule next check" %] selected[% END%]>reschedule next check</option>
+            [% need_spacer = 1 %]
           [% END %]
           [% IF c.config.cmd_quick_status.downtime %]
-          <option value="2" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/downtime.gif); }">add downtime</option>
-          <option value="5" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/delete.gif); }">remove downtimes</option>
-          <option value="" disabled class="disable">-------------------------</option>
+            [% IF need_spacer %]<option value="" disabled class="disable">-------------------------</option>[% need_spacer = 0  %][% END %]
+            <option value="2" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/downtime.gif); }"[% IF c.config.cmd_quick_status.default == "add downtime" %] selected[% END%]>add downtime</option>
+            <option value="5" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/delete.gif); }"[% IF c.config.cmd_quick_status.default == "remove downtimes" %] selected[% END%]>remove downtimes</option>
+            [% need_spacer = 1 %]
           [% END %]
           [% IF c.config.cmd_quick_status.comment %]
-          <option value="3" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/comment.gif); }">add comment</option>
-          <option value="6" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/delete.gif); }">remove comments</option>
-          <option value="" disabled class="disable">-------------------------</option>
+            [% IF need_spacer %]<option value="" disabled class="disable">-------------------------</option>[% need_spacer = 0  %][% END %]
+            <option value="3" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/comment.gif); }"[% IF c.config.cmd_quick_status.default == "add comment" %] selected[% END%]>add comment</option>
+            <option value="6" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/delete.gif); }"[% IF c.config.cmd_quick_status.default == "remove comments" %] selected[% END%]>remove comments</option>
+            [% need_spacer = 1 %]
           [% END %]
           [% IF c.config.cmd_quick_status.acknowledgement %]
-          <option value="4" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/ack.gif); }">add acknowledgement</option>
-          <option value="7" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/noack.gif); }">remove acknowledgement</option>
-          <option value="" disabled class="disable">-------------------------</option>
+            [% IF need_spacer %]<option value="" disabled class="disable">-------------------------</option>[% need_spacer = 0  %][% END %]
+            <option value="4" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/ack.gif); }"[% IF c.config.cmd_quick_status.default == "add acknowledgement" %] selected[% END%]>add acknowledgement</option>
+            <option value="7" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/noack.gif); }"[% IF c.config.cmd_quick_status.default == "remove acknowledgement" %] selected[% END%]>remove acknowledgement</option>
+            [% need_spacer = 1 %]
           [% END %]
           [% IF c.config.cmd_quick_status.active_checks %]
-          <option value="8" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/enabled.gif); }">enable active checks</option>
-          <option value="9" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/disabled.gif); }">disable active checks</option>
-          <option value="" disabled class="disable">-------------------------</option>
+            [% IF need_spacer %]<option value="" disabled class="disable">-------------------------</option>[% need_spacer = 0  %][% END %]
+            <option value="8" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/enabled.gif); }"[% IF c.config.cmd_quick_status.default == "enable active checks" %] selected[% END%]>enable active checks</option>
+            <option value="9" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/disabled.gif); }"[% IF c.config.cmd_quick_status.default == "disable active checks" %] selected[% END%]>disable active checks</option>
+            [% need_spacer = 1 %]
           [% END %]
           [% IF c.config.cmd_quick_status.notifications %]
-          <option value="10" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/enabled.gif); }">enable notifications</option>
-          <option value="11" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/disabled.gif); }">disable notifications</option>
-          <option value="" disabled class="disable">-------------------------</option>
+            [% IF need_spacer %]<option value="" disabled class="disable">-------------------------</option>[% need_spacer = 0  %][% END %]
+            <option value="10" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/enabled.gif); }"[% IF c.config.cmd_quick_status.default == "enable notifications" %] selected[% END%]>enable notifications</option>
+            <option value="11" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/disabled.gif); }"[% IF c.config.cmd_quick_status.default == "disable notifications" %] selected[% END%]>disable notifications</option>
+            [% need_spacer = 1 %]
           [% END %]
           [% IF c.config.cmd_quick_status.submit_result %]
-          <option value="12" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/passiveonly.gif); }">submit passive check result</option>
+            [% IF need_spacer %]<option value="" disabled class="disable">-------------------------</option>[% need_spacer = 0  %][% END %]
+            <option value="12" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/passiveonly.gif); }"[% IF c.config.cmd_quick_status.default == "submit passive check result" %] selected[% END%]>submit passive check result</option>
           [% END %]
           [% IF c.config.cmd_quick_status.reset_attributes %]
-          <option value="14" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/disabled.gif); }">reset modified attributes</option>
+            [% IF need_spacer %]<option value="" disabled class="disable">-------------------------</option>[% need_spacer = 0  %][% END %]
+            <option value="14" style="background-image:url([% url_prefix %]thruk/themes/[% theme %]/images/disabled.gif); }"[% IF c.config.cmd_quick_status.default == "reset modified attributes" %] selected[% END%]>reset modified attributes</option>
           [% END %]
         </select>
       </td>
@@ -77,11 +85,11 @@
     </tr>
     <tr id="row_start">
       <td class="statusOdd">Start:</td>
-      <td class="statusOdd"><a href="#" onclick="show_cal('start_time')"><img src="[% url_prefix %]thruk/themes/[% theme %]/images/calendar.png" width="16" height="16" alt="pick date" style="vertical-align: text-bottom"></a> <input type="text" value="[% format_date(date.now, '%Y-%m-%d %H:%M:%S') %]" id="start_time" name="start_time" size="20" onkeyup="verify_time(this.id)"></td>
+      <td class="statusOdd"><a href="#" onclick="show_cal('start_time'); return false;"><img src="[% url_prefix %]thruk/themes/[% theme %]/images/calendar.png" width="16" height="16" alt="pick date" style="vertical-align: text-bottom"></a> <input type="text" value="[% format_date(date.now, '%Y-%m-%d %H:%M:%S') %]" id="start_time" name="start_time" size="20" onkeyup="verify_time(this.id)"></td>
     </tr>
     <tr id="row_end">
       <td class="statusOdd">End:</td>
-      <td class="statusOdd"><a href="#" onclick="show_cal('end_time')"><img src="[% url_prefix %]thruk/themes/[% theme %]/images/calendar.png" width="16" height="16" alt="pick date" style="vertical-align: text-bottom"></a> <input type="text" value="[% format_date(date.now+downtime_duration, '%Y-%m-%d %H:%M:%S') %]" id="end_time" name="end_time" size="20" onkeyup="verify_time(this.id)"></td>
+      <td class="statusOdd"><a href="#" onclick="show_cal('end_time'); return false;"><img src="[% url_prefix %]thruk/themes/[% theme %]/images/calendar.png" width="16" height="16" alt="pick date" style="vertical-align: text-bottom"></a> <input type="text" value="[% format_date(date.now+downtime_duration, '%Y-%m-%d %H:%M:%S') %]" id="end_time" name="end_time" size="20" onkeyup="verify_time(this.id)"></td>
     </tr>
     <tr id="row_downtime_options">
       <td class="statusOdd" valign="top">Options:</td>
@@ -125,7 +133,7 @@
     </tr>
     <tr id="row_expire">
       <td class="statusOdd">Expire:</td>
-      <td class="statusOdd"><a href="#" onclick="show_cal('expire_time')"><img src="[% url_prefix %]thruk/themes/[% theme %]/images/calendar.png" width="16" height="16" alt="pick date" style="vertical-align: text-bottom"></a> <input type="text" value="[% format_date(date.now+expire_ack_duration, '%Y-%m-%d %H:%M:%S') %]" id="expire_time" name="expire_time" size="20" onkeyup="verify_time(this.id)"></td>
+      <td class="statusOdd"><a href="#" onclick="show_cal('expire_time'); return false;"><img src="[% url_prefix %]thruk/themes/[% theme %]/images/calendar.png" width="16" height="16" alt="pick date" style="vertical-align: text-bottom"></a> <input type="text" value="[% format_date(date.now+expire_ack_duration, '%Y-%m-%d %H:%M:%S') %]" id="expire_time" name="expire_time" size="20" onkeyup="verify_time(this.id)"></td>
     </tr>
     <tr id="row_comment_options">
       <td class="statusOdd" valign="top">Options:</td>

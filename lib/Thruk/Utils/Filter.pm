@@ -17,6 +17,7 @@ use Data::Dumper;
 use Date::Calc qw/Localtime Today/;
 use Date::Manip;
 use URI::Escape;
+use JSON::XS;
 
 ##############################################
 
@@ -120,7 +121,7 @@ wrapper around the internal sprintf
 sub sprintf {
     my $format = shift;
     local $SIG{__WARN__} = sub { Carp::cluck(@_); };
-    return sprintf $format, @_;
+    return CORE::sprintf $format, @_;
 }
 
 
@@ -136,6 +137,7 @@ formats a time definition into date format
 sub date_format {
     my $c         = shift;
     my $timestamp = shift;
+    my $format    = shift;
     return "" unless defined $timestamp;
 
     # get today
@@ -156,6 +158,10 @@ sub date_format {
     if($@) {
         $c->log->warn("date_format($timestamp) failed: $@");
         return "err:$timestamp";
+    }
+
+    if(defined $format) {
+        return(Thruk::Utils::format_date($timestamp, $format));
     }
 
     if($t_year == $year and $t_month == $month and $t_day == $day) {
@@ -262,8 +268,10 @@ returns a url with referer removed
 =cut
 sub clean_referer {
     my $uri = shift;
-    $uri =~ s/&amp;referer=[^&]+//gmx;
-    $uri =~ s/&amp;bookmark=[^&]+//gmx;
+    for my $key (qw/referer bookmark scrollTo/) {
+        $uri =~ s/&amp;$key=[^&]+//gmx;
+        $uri =~ s/\?$key=[^&]+/?/gmx;
+    }
     return $uri;
 }
 
@@ -355,6 +363,31 @@ sub escape_quotes {
     return $string;
 }
 
+########################################
+
+=head2 json_encode
+
+  json_encode(...)
+
+returns json encoded string
+
+=cut
+sub json_encode {
+    return JSON::XS::encode_json([@_]);
+}
+
+########################################
+
+=head2 encode_json_obj
+
+  encode_json_obj(array)
+
+returns json encoded object
+
+=cut
+sub encode_json_obj {
+    return JSON::XS::encode_json($_[0]);
+}
 
 ########################################
 
@@ -438,6 +471,23 @@ sub name2id {
 
 ########################################
 
+=head2 uniqnumber
+
+  uniqnumber()
+
+return uniq number which can be used in html ids
+
+=cut
+sub uniqnumber {
+    our $uniqnumber;
+    $uniqnumber = 0 unless defined $uniqnumber;
+    $uniqnumber++;
+    return $uniqnumber;
+}
+
+
+########################################
+
 =head2 get_message
 
   get_message($c)
@@ -456,6 +506,7 @@ sub get_message {
         $c->res->cookies->{'thruk_message'} = {
             value   => '',
             expires => '-1M',
+            path    => $c->stash->{'cookie_path'}
         };
         # sometimes the cookie is empty, so delete it in every case
         # and show it if it contains data
@@ -627,6 +678,33 @@ sub logline_icon {
 
     return $pic;
 }
+
+
+########################################
+
+=head2 button
+
+  my $html = button($link, $value, $class)
+
+returns button html source
+
+=cut
+sub button {
+    my($link, $value, $class) = @_;
+
+    my($page, $args) = split(/\?/mx, $link, 2);
+    $args =~ s/&amp;/&/gmx;
+
+    my $html = '<form action="'.$page.'" method="POST">';
+    for my $a (split/\&/mx, $args) {
+        my($k,$v) = split(/=/mx,$a,2);
+        $html   .= '<input type="hidden" name="'.$k.'" value="'.$v.'">';
+    }
+    $html   .= '<button class="conf_save_reload_button">save &amp; reload</button>';
+    $html   .= '</form>';
+    return $html;
+}
+
 
 
 ########################################

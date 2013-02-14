@@ -1,4 +1,4 @@
-/* render date */
+﻿/* render date */
 TP.render_date = function(v, td, item) {
     if(v == 0) { return 'never'; }
     return TP.date_format(v);
@@ -97,7 +97,7 @@ TP.render_service_host = function(v, td, item, row, col, store, view) {
         if(item.data.host_state==1) { hstate = 'Unreachable'; }
         if(item.data.host_state==2) { hstate = 'Down';        }
         td.tdCls = 'BG_'+hstate.toUpperCase();
-        return v;
+        return TP.render_clickable_host(v, td, item, row, col, store, view);
     }
     return '';
 }
@@ -267,6 +267,13 @@ TP.render_service_icons = function(v, td, item, row, col, store, view) {
     return icons;
 }
 
+/* make host clickable */
+TP.render_clickable_host = function(v, td, item, row, col, store, view) {
+    td.tdCls += ' clickable';
+    var host  = item.data.host_name ? item.data.host_name : item.data.name;
+    return "<div class='clickable' onClick=\"TP.add_panlet({type:'TP.PanletHost', conf: { xdata: { host: '"+host+"'}}})\">"+v+"<\/div>";
+}
+
 /* make service description clickable */
 TP.render_clickable_service = function(v, td, item, row, col, store, view) {
     td.tdCls = 'clickable';
@@ -280,6 +287,7 @@ TP.render_url = function(v, td, item, row, col, store, view) {
 
 /* render gearman queues */
 TP.render_gearman_queue = function(v, td, item, row, col, store, view) {
+    td.tdCls = '';
     if(item.data.worker * 10 <= item.data.waiting) {
         td.tdCls = 'BG_WARNING';
     }
@@ -289,12 +297,29 @@ TP.render_gearman_queue = function(v, td, item, row, col, store, view) {
     if(item.data.worker == 0 && item.data.waiting > 0) {
         td.tdCls = 'BG_DOWN';
     }
+    if(item.data.waiting == 0) {
+        td.tdCls = '';
+    }
     return v;
 }
 
+/* create performance bar */
+TP.render_perfbar = function(v, td, item, row, col, store, view) {
+    if(perf_bar_mode == 'off') {
+        return "";
+    }
+    var r =  perf_table(false, item.data.state, item.data.plugin_output, item.data.perf_data, item.data.check_command, "");
+    if(r == false) { return ""; }
+    td.tdCls = "less_padding";
+    return r;
+}
+
 /* format timestamp */
-TP.date_format = function(t) {
+TP.date_format = function(t, f) {
     var d = new Date(t*1000);
+    if(f != undefined) {
+        return Ext.Date.format(d, f);
+    }
     if(Ext.Date.format(new Date(), "Y-m-d") == Ext.Date.format(d, "Y-m-d")) {
         return Ext.Date.format(d, "H:i:s");
     }

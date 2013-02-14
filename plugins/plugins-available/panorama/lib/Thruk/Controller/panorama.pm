@@ -108,6 +108,9 @@ sub index :Path :Args(0) :MyAction('AddDefaults') {
         elsif($task eq 'host_list') {
             return($self->_task_host_list($c));
         }
+        elsif($task eq 'host_detail') {
+            return($self->_task_host_detail($c));
+        }
         elsif($task eq 'service_list') {
             return($self->_task_service_list($c));
         }
@@ -137,13 +140,23 @@ sub index :Path :Args(0) :MyAction('AddDefaults') {
         push @{$c->stash->{preload_img}}, $i;
     }
 
-    $c->stash->{template}  = 'panorama.tt';
+    $self->_js($c, 1) if $c->config->{'thruk_debug'};
+
+    # clean up?
+    if($c->request->parameters->{'clean'}) {
+        my $data = Thruk::Utils::get_user_data($c);
+        delete $data->{'panorama'};
+        Thruk::Utils::store_user_data($c, $data);
+        return $c->response->redirect("panorama.cgi");
+    }
+
+    $c->stash->{template} = 'panorama.tt';
     return 1;
 }
 
 ##########################################################
 sub _js {
-    my ( $self, $c ) = @_;
+    my ( $self, $c, $only_data ) = @_;
 
     my $stateprovider = $c->config->{'Thruk::Plugin::Panorama'}->{'state_provider'} || 'server';
     if($stateprovider ne 'cookie' and $stateprovider ne 'server') { $stateprovider = 'server'; }
@@ -162,10 +175,12 @@ sub _js {
     }
 
     my $data = Thruk::Utils::get_user_data($c);
-    $c->stash->{state}     = encode_json($data->{'panorama'}->{'state'} || {});
+    $c->stash->{state} = encode_json($data->{'panorama'}->{'state'} || {});
 
-    $c->res->content_type('text/javascript');
-    $c->stash->{template}  = 'panorama_js.tt';
+    unless($only_data) {
+        $c->res->content_type('text/javascript');
+        $c->stash->{template} = 'panorama_js.tt';
+    }
     return 1;
 }
 
@@ -177,14 +192,20 @@ sub _stateprovider {
     my $value = $c->request->parameters->{'value'};
     my $name  = $c->request->parameters->{'name'};
 
-    if(defined $task and $task eq 'set') {
+    if(defined $task and ($task eq 'set' or $task eq 'update')) {
         my $data = Thruk::Utils::get_user_data($c);
-        if($value eq 'null') {
-            $c->log->debug("panorama: removed ".$name);
-            delete $data->{'panorama'}->{'state'}->{$name};
+        if($task eq 'update') {
+            $c->log->debug("panorama: update users data");
+            $data->{'panorama'}->{'state'} = $c->request->parameters;
+            delete $data->{'panorama'}->{'state'}->{'task'};
         } else {
-            $c->log->debug("panorama: set ".$name." to ".$self->_nice_ext_value($value));
-            $data->{'panorama'}->{'state'}->{$name} = $value;
+            if($value eq 'null') {
+                $c->log->debug("panorama: removed ".$name);
+                delete $data->{'panorama'}->{'state'}->{$name};
+            } else {
+                $c->log->debug("panorama: set ".$name." to ".$self->_nice_ext_value($value));
+                $data->{'panorama'}->{'state'}->{$name} = $value;
+            }
         }
         Thruk::Utils::store_user_data($c, $data);
 
@@ -290,24 +311,9 @@ sub _task_stats_check_metrics {
 sub _task_server_stats {
     my($self, $c) = @_;
 
-    # gather system statistics
-    my $mem = {};
-    for my $line (split/\n/mx,(read_file('/proc/meminfo'))) {
-        my($name,$val,$unit) = split(/\s+/mx,$line,3);
-        next unless defined $unit;
-        $name =~ s/:$//gmx;
-        $mem->{$name} = int($val / 1024);
-    }
-    my @load = split(/\s+/mx,(read_file('/proc/loadavg')));
-    my $lastcpu = $c->cache->get('panorama_sys_cpu');
-    my $pcs  = Thruk::Utils::PanoramaCpuStats->new({sleep => 3, init => $lastcpu->{'init'}});
-    my $cpu  = $pcs->get();
-    # don't save more often than 5 seconds to keep a better reference
-    if(!defined $lastcpu->{'time'} or $lastcpu->{'time'} +5 < time()) {
-        $c->cache->set('panorama_sys_cpu', { init => $pcs->{'init'}, time => time() });
-    }
-    my $cpucount = (scalar keys %{$cpu}) - 1;
-    $cpu     = $cpu->{'cpu'};
+    my $show_load   = $c->request->parameters->{'load'}   || 'true';
+    my $show_cpu    = $c->request->parameters->{'cpu'}    || 'true';
+    my $show_memory = $c->request->parameters->{'memory'} || 'true';
 
     my $json = {
         columns => [
@@ -319,24 +325,56 @@ sub _task_server_stats {
             { 'header' => 'Crit',   dataIndex => 'crit',  hidden => JSON::XS::true },
             { 'header' => 'Max',    dataIndex => 'max',   hidden => JSON::XS::true },
         ],
-        data  => [
+        data  => [],
+        group => 'cat',
+    };
+    $c->stash->{'json'} = $json;
+    return $c->forward('Thruk::View::JSON') unless -e '/proc'; # all beyond is linux only
+
+    my($cpu, $cpucount);
+    if($show_load eq 'true' or $show_cpu eq 'true') {
+        my $lastcpu = $c->cache->get('panorama_sys_cpu');
+        my $pcs  = Thruk::Utils::PanoramaCpuStats->new({sleep => 3, init => $lastcpu->{'init'}});
+           $cpu  = $pcs->get();
+           $cpucount = (scalar keys %{$cpu}) - 1;
+        # don't save more often than 5 seconds to keep a better reference
+        if(!defined $lastcpu->{'time'} or $lastcpu->{'time'} +5 < time()) {
+            $c->cache->set('panorama_sys_cpu', { init => $pcs->{'init'}, time => time() });
+        }
+        $cpu     = $cpu->{'cpu'};
+    }
+
+    if($show_load eq 'true') {
+        my @load = split(/\s+/mx,(read_file('/proc/loadavg')));
+        push @{$json->{'data'}},
             { cat => 'Load',    type => 'load 1',   value => $load[0],            'warn' => $cpucount*2.5, crit => $cpucount*5.0, max => $cpucount*3, graph => '' },
             { cat => 'Load',    type => 'load 5',   value => $load[1],            'warn' => $cpucount*2.0, crit => $cpucount*3.0, max => $cpucount*3, graph => '' },
-            { cat => 'Load',    type => 'load 15',  value => $load[2],            'warn' => $cpucount*1.5, crit => $cpucount*2,   max => $cpucount*3, graph => '' },
+            { cat => 'Load',    type => 'load 15',  value => $load[2],            'warn' => $cpucount*1.5, crit => $cpucount*2,   max => $cpucount*3, graph => '' };
+    }
+    if($show_cpu eq 'true') {
+        push @{$json->{'data'}},
             { cat => 'CPU',     type => 'User',     value => $cpu->{'user'},      'warn' => 70, crit => 90, max => 100, graph => '' },
             { cat => 'CPU',     type => 'Nice',     value => $cpu->{'nice'},      'warn' => 70, crit => 90, max => 100, graph => '' },
             { cat => 'CPU',     type => 'System',   value => $cpu->{'system'},    'warn' => 70, crit => 90, max => 100, graph => '' },
-            { cat => 'CPU',     type => 'Wait IO',  value => $cpu->{'iowait'},    'warn' => 70, crit => 90, max => 100, graph => '' },
+            { cat => 'CPU',     type => 'Wait IO',  value => $cpu->{'iowait'},    'warn' => 70, crit => 90, max => 100, graph => '' };
+    }
+    if($show_memory eq 'true') {
+        # gather system statistics
+        my $mem = {};
+        for my $line (split/\n/mx,(read_file('/proc/meminfo'))) {
+            my($name,$val,$unit) = split(/\s+/mx,$line,3);
+            next unless defined $unit;
+            $name =~ s/:$//gmx;
+            $mem->{$name} = int($val / 1024);
+        }
+        push @{$json->{'data'}},
             { cat => 'Memory',  type => 'total',    value => $mem->{'MemTotal'},  graph => '', warn => $mem->{'MemTotal'}, crit => $mem->{'MemTotal'}, max => $mem->{'MemTotal'} },
             { cat => 'Memory',  type => 'free',     value => $mem->{'MemFree'},   'warn' => $mem->{'MemTotal'}*0.7, crit => $mem->{'MemTotal'}*0.8, max => $mem->{'MemTotal'}, graph => '' },
             { cat => 'Memory',  type => 'used',     value => $mem->{'MemTotal'}-$mem->{'MemFree'}-$mem->{'Buffers'}-$mem->{'Cached'}, 'warn' => $mem->{'MemTotal'}*0.7, crit => $mem->{'MemTotal'}*0.8, max => $mem->{'MemTotal'}, graph => '' },
             { cat => 'Memory',  type => 'buffers',  value => $mem->{'Buffers'},   'warn' => $mem->{'MemTotal'}*0.8, crit => $mem->{'MemTotal'}*0.9, max => $mem->{'MemTotal'}, graph => '' },
-            { cat => 'Memory',  type => 'cached',   value => $mem->{'Cached'},    'warn' => $mem->{'MemTotal'}*0.8, crit => $mem->{'MemTotal'}*0.9, max => $mem->{'MemTotal'}, graph => '' },
-        ],
-        group => 'cat'
-    };
+            { cat => 'Memory',  type => 'cached',   value => $mem->{'Cached'},    'warn' => $mem->{'MemTotal'}*0.8, crit => $mem->{'MemTotal'}*0.9, max => $mem->{'MemTotal'}, graph => '' };
+    }
 
-    $c->stash->{'json'} = $json;
     return $c->forward('Thruk::View::JSON');
 }
 
@@ -363,12 +401,14 @@ sub _task_stats_gearman_grid {
         data    => []
     };
     for my $queue (sort keys %{$data}) {
-            push @{$json->{'data'}}, {
-                name    => $queue,
-                worker  => $data->{$queue}->{'worker'},
-                running => $data->{$queue}->{'running'},
-                waiting => $data->{$queue}->{'waiting'},
-            };
+        # hide empty queues
+        next if($data->{$queue}->{'worker'} == 0 and $data->{$queue}->{'running'} == 0 and $data->{$queue}->{'waiting'} == 0);
+        push @{$json->{'data'}}, {
+            name    => $queue,
+            worker  => $data->{$queue}->{'worker'},
+            running => $data->{$queue}->{'running'},
+            waiting => $data->{$queue}->{'waiting'},
+        };
     }
 
     $c->stash->{'json'} = $json;
@@ -396,7 +436,7 @@ sub _task_show_logs {
     }
     my $total_filter = Thruk::Utils::combine_filter('-and', $filter);
 
-    $c->{'db'}->renew_logcache($c);
+    return if $c->{'db'}->renew_logcache($c);
     my $data = $c->{'db'}->get_logs(filter => [$total_filter, Thruk::Utils::Auth::get_auth_filter($c, 'log')], sort => {'DESC' => 'time'});
 
     my $json = {
@@ -479,18 +519,19 @@ sub _task_hosts {
     $c->{'request'}->{'parameters'}->{'entries'} = $c->{'request'}->{'parameters'}->{'pageSize'};
     $c->{'request'}->{'parameters'}->{'page'}    = $c->{'request'}->{'parameters'}->{'currentPage'};
 
-    my $data = $c->{'db'}->get_hosts(filter => [ Thruk::Utils::Auth::get_auth_filter($c, 'hosts'), $hostfilter ], pager => $c);
+    my $data = $c->{'db'}->get_hosts(filter => [ Thruk::Utils::Auth::get_auth_filter($c, 'hosts'), $hostfilter ], pager => 1);
 
     my $json = {
         columns => [
-            { 'header' => 'Hostname',               width => 120, dataIndex => 'name' },
-            { 'header' => 'Icons',                  width => 75,  dataIndex => 'icons',          align => 'right',  renderer => 'TP.render_host_icons' },
-            { 'header' => 'Status',                 width => 80,  dataIndex => 'state',          align => 'center', renderer => 'TP.render_host_status' },
-            { 'header' => 'Last Check',             width => 80,  dataIndex => 'last_check',     align => 'center', renderer => 'TP.render_last_check' },
-            { 'header' => 'Duration',               width => 100, dataIndex => 'duration',       align => 'center', renderer => 'TP.render_duration' },
-            { 'header' => 'Attempt',                width => 60,  dataIndex => 'attempt',        align => 'center', renderer => 'TP.render_attempt' },
-            { 'header' => 'Site',                   width => 60,  dataIndex => 'peer_name',      align => 'center', },
-            { 'header' => 'Status Information',     flex  => 1,   dataIndex => 'plugin_output',                     renderer => 'TP.render_plugin_output' },
+            { 'header' => 'Hostname',               width => 120, dataIndex => 'name',                                 renderer => 'TP.render_clickable_host' },
+            { 'header' => 'Icons',                  width => 75,  dataIndex => 'icons',             align => 'right',  renderer => 'TP.render_host_icons' },
+            { 'header' => 'Status',                 width => 80,  dataIndex => 'state',             align => 'center', renderer => 'TP.render_host_status' },
+            { 'header' => 'Last Check',             width => 80,  dataIndex => 'last_check',        align => 'center', renderer => 'TP.render_last_check' },
+            { 'header' => 'Duration',               width => 100, dataIndex => 'last_state_change', align => 'center', renderer => 'TP.render_duration' },
+            { 'header' => 'Attempt',                width => 60,  dataIndex => 'current_attempt',   align => 'center', renderer => 'TP.render_attempt' },
+            { 'header' => 'Site',                   width => 60,  dataIndex => 'peer_name',         align => 'center', },
+            { 'header' => 'Status Information',     flex  => 1,   dataIndex => 'plugin_output',                        renderer => 'TP.render_plugin_output' },
+            { 'header' => 'Performance',            width => 80,  dataIndex => 'perf_data',                            renderer => 'TP.render_perfbar' },
 
             { 'header' => 'Current Attempt',          dataIndex => 'current_attempt',             hidden => JSON::XS::true },
             { 'header' => 'Max Check Attempts',       dataIndex => 'max_check_attempts',          hidden => JSON::XS::true },
@@ -541,22 +582,23 @@ sub _task_services {
     $c->{'request'}->{'parameters'}->{'entries'} = $c->{'request'}->{'parameters'}->{'pageSize'};
     $c->{'request'}->{'parameters'}->{'page'}    = $c->{'request'}->{'parameters'}->{'currentPage'};
 
-    $c->{'db'}->get_services(filter => [ Thruk::Utils::Auth::get_auth_filter($c, 'services'), $servicefilter], pager => $c);
+    $c->{'db'}->get_services(filter => [ Thruk::Utils::Auth::get_auth_filter($c, 'services'), $servicefilter], pager => 1);
 
     my $json = {
         columns => [
-            { 'header' => 'Hostname',               width => 120, dataIndex => 'host_display_name',                renderer => 'TP.render_service_host' },
-            { 'header' => 'Host',                                 dataIndex => 'host_name',     hidden => JSON::XS::true },
-            { 'header' => 'Host Icons',             width => 75,  dataIndex => 'icons',         align => 'right',  renderer => 'TP.render_host_service_icons' },
-            { 'header' => 'Service',                width => 120, dataIndex => 'display_name',                     renderer => 'TP.render_clickable_service' },
-            { 'header' => 'Description',                          dataIndex => 'description',   hidden => JSON::XS::true },
-            { 'header' => 'Icons',                  width => 75,  dataIndex => 'icons',         align => 'right',  renderer => 'TP.render_service_icons' },
-            { 'header' => 'Status',                 width => 70,  dataIndex => 'state',         align => 'center', renderer => 'TP.render_service_status' },
-            { 'header' => 'Last Check',             width => 80,  dataIndex => 'last_check',    align => 'center', renderer => 'TP.render_last_check' },
-            { 'header' => 'Duration',               width => 100, dataIndex => 'duration',      align => 'center', renderer => 'TP.render_duration' },
-            { 'header' => 'Attempt',                width => 60,  dataIndex => 'attempt',       align => 'center', renderer => 'TP.render_attempt' },
-            { 'header' => 'Site',                   width => 60,  dataIndex => 'peer_name',     align => 'center', },
-            { 'header' => 'Status Information',     flex  => 1,   dataIndex => 'plugin_output',                     renderer => 'TP.render_plugin_output' },
+            { 'header' => 'Hostname',               width => 120, dataIndex => 'host_display_name',                    renderer => 'TP.render_service_host' },
+            { 'header' => 'Host',                                 dataIndex => 'host_name',         hidden => JSON::XS::true },
+            { 'header' => 'Host Icons',             width => 75,  dataIndex => 'icons',             align => 'right',  renderer => 'TP.render_host_service_icons' },
+            { 'header' => 'Service',                width => 120, dataIndex => 'display_name',                         renderer => 'TP.render_clickable_service' },
+            { 'header' => 'Description',                          dataIndex => 'description',       hidden => JSON::XS::true },
+            { 'header' => 'Icons',                  width => 75,  dataIndex => 'icons',             align => 'right',  renderer => 'TP.render_service_icons' },
+            { 'header' => 'Status',                 width => 70,  dataIndex => 'state',             align => 'center', renderer => 'TP.render_service_status' },
+            { 'header' => 'Last Check',             width => 80,  dataIndex => 'last_check',        align => 'center', renderer => 'TP.render_last_check' },
+            { 'header' => 'Duration',               width => 100, dataIndex => 'last_state_change', align => 'center', renderer => 'TP.render_duration' },
+            { 'header' => 'Attempt',                width => 60,  dataIndex => 'current_attempt',   align => 'center', renderer => 'TP.render_attempt' },
+            { 'header' => 'Site',                   width => 60,  dataIndex => 'peer_name',         align => 'center', },
+            { 'header' => 'Status Information',     flex  => 1,   dataIndex => 'plugin_output',                        renderer => 'TP.render_plugin_output' },
+            { 'header' => 'Performance',            width => 80,  dataIndex => 'perf_data',                            renderer => 'TP.render_perfbar' },
 
             { 'header' => 'Current Attempt',          dataIndex => 'current_attempt',             hidden => JSON::XS::true },
             { 'header' => 'Max Check Attempts',       dataIndex => 'max_check_attempts',          hidden => JSON::XS::true },
@@ -596,7 +638,6 @@ sub _task_services {
             { 'header' => 'Host Icon Image Alt',            dataIndex => 'host_icon_image_alt',           hidden => JSON::XS::true, hideable => JSON::XS::false },
             { 'header' => 'Host Custom Variable Names',     dataIndex => 'host_custom_variable_names',    hidden => JSON::XS::true, hideable => JSON::XS::false },
             { 'header' => 'Host Custom Variable Values',    dataIndex => 'host_custom_variable_values',   hidden => JSON::XS::true, hideable => JSON::XS::false },
-
 
             { 'header' => 'Last Time Ok',       dataIndex => 'last_time_ok',       hidden => JSON::XS::true, renderer => 'TP.render_date' },
             { 'header' => 'Last Time Warning',  dataIndex => 'last_time_warning',  hidden => JSON::XS::true, renderer => 'TP.render_date' },
@@ -849,6 +890,22 @@ sub _task_host_list {
 }
 
 ##########################################################
+sub _task_host_detail {
+    my($self, $c) = @_;
+
+    my $host        = $c->request->parameters->{'host'}    || '';
+    $c->stash->{'json'} = {};
+    my $hosts     = $c->{'db'}->get_hosts(filter => [ Thruk::Utils::Auth::get_auth_filter($c, 'hosts'), { name => $host }]);
+    my $downtimes = $c->{'db'}->get_downtimes(
+        filter => [ Thruk::Utils::Auth::get_auth_filter( $c, 'downtimes' ), { 'host_name' => $host }, { 'service_description' => '' } ],
+        sort => { 'DESC' => 'id' } );
+    if(defined $hosts and scalar @{$hosts} > 0) {
+        $c->stash->{'json'} = { data => $hosts->[0], downtimes => $downtimes };
+    }
+    return $c->forward('Thruk::View::JSON');
+}
+
+##########################################################
 sub _task_service_list {
     my($self, $c) = @_;
 
@@ -898,7 +955,10 @@ sub _get_gearman_stats {
         PeerAddr => $host,
         PeerPort => $port,
     )
-    or do { $c->log->warn("can't connect to port $port on $host: $!"); return $data; };
+    or do {
+        $c->log->warn("can't connect to port $port on $host: $!") unless(defined $ENV{'THRUK_SRC'} and $ENV{'THRUK_SRC'} eq 'TEST');
+        return $data;
+    };
     $handle->autoflush(1);
 
     print $handle "status\n";

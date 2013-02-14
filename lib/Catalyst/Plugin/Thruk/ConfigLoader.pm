@@ -2,21 +2,55 @@ package Catalyst::Plugin::Thruk::ConfigLoader;
 
 use strict;
 use Thruk::Utils;
+use Thruk::Config;
 use base 'Catalyst::Plugin::ConfigLoader';
 
-sub finalize_config {
-    my $c = shift;
+########################################
 
-    my $project_root = $c->config->{home};
+=head2 finalize_config
+
+    adjust config items which have to be set before anything else
+
+=cut
+
+sub finalize_config {
+    my($c)= @_;
+    return _do_finalize_config($c->config);
+}
+
+########################################
+
+=head2 finalize
+
+    restore used specific settings from global hash
+
+=cut
+
+sub finalize {
+    my $c = shift;
+    # restore user adjusted config
+    if($c->stash->{'config_adjustments'}) {
+        for my $key (keys %{$c->stash->{'config_adjustments'}}) {
+            $c->config->{$key} = $c->stash->{'config_adjustments'}->{$key};
+        }
+    }
+    return $c->next::method(@_);
+}
+
+########################################
+sub _do_finalize_config {
+    my($config) = @_;
 
     ###################################################
     # set var dir
-    $c->config->{'var_path'} = './var' unless defined $c->config->{'var_path'};
+    $config->{'var_path'} = $config->{'home'}.'/var' unless defined $config->{'var_path'};
+    $config->{'var_path'} =~ s|/$||mx;
 
     ###################################################
     # switch user when running as root
-    my $var_path = $c->config->{'var_path'} or die("no var path!");
-    die("'".$var_path."/.' does not exist, make sure it exists and has proper user/groups/permissions") unless -d $var_path.'/.';
+    my $var_path = $config->{'var_path'} or die("no var path!");
+    if($> != 0 and !-d ($var_path.'/.')) { CORE::mkdir($var_path); }
+    die("'".$var_path."/.' does not exist, make sure it exists and has proper user/groups/permissions") unless -d ($var_path.'/.');
     my ($uid, $groups) = Thruk::Utils::get_user($var_path);
     $ENV{'THRUK_USER_ID'}  = $uid;
     $ENV{'THRUK_GROUP_ID'} = $groups->[0];
@@ -29,7 +63,8 @@ sub finalize_config {
 
     ###################################################
     # get installed plugins
-    my $plugin_dir = $c->config->{'plugin_path'} || $project_root."/plugins";
+    $config->{'plugin_path'} = $config->{home}.'/plugins' unless defined $config->{'plugin_path'};
+    my $plugin_dir = $config->{'plugin_path'};
     $plugin_dir = $plugin_dir.'/plugins-enabled/*/';
 
     print STDERR "using plugins: ".$plugin_dir."\n" if $ENV{'THRUK_PLUGIN_DEBUG'};
@@ -41,8 +76,8 @@ sub finalize_config {
         $addon_name =~ s/^.*\///gmx;
 
         # does the plugin directory exist?
-        if(! -d $project_root.'/root/thruk/plugins/' and -w $project_root.'/root/thruk' ) {
-            CORE::mkdir($project_root.'/root/thruk/plugins');
+        if(! -d $config->{home}.'/root/thruk/plugins/' and -w $config->{home}.'/root/thruk' ) {
+            CORE::mkdir($config->{home}.'/root/thruk/plugins');
         }
 
         print STDERR "loading plugin: ".$addon_name."\n" if $ENV{'THRUK_PLUGIN_DEBUG'};
@@ -56,14 +91,14 @@ sub finalize_config {
         # template directory included?
         if(-d $addon.'templates') {
             print STDERR " -> templates\n" if $ENV{'THRUK_PLUGIN_DEBUG'};
-            unshift @{$c->config->{templates_paths}}, $addon.'templates';
+            unshift @{$config->{templates_paths}}, $addon.'templates';
         }
 
         # static content included?
         # only needed for development server, handled by apache aliasmatch otherwise
-        if( -d $addon.'root' and -w $project_root.'/root/thruk/plugins/' ) {
+        if( -d $addon.'root' and -w $config->{home}.'/root/thruk/plugins/' ) {
             print STDERR " -> root\n" if $ENV{'THRUK_PLUGIN_DEBUG'};
-            my $target_symlink = $project_root.'/root/thruk/plugins/'.$addon_name;
+            my $target_symlink = $config->{home}.'/root/thruk/plugins/'.$addon_name;
             if(-e $target_symlink) {
                 my @s1 = stat($target_symlink."/.");
                 my @s2 = stat($addon.'root/.');
@@ -80,7 +115,7 @@ sub finalize_config {
 
     ###################################################
     # get installed / enabled themes
-    my $themes_dir = $c->config->{'themes_path'} || $project_root."/themes";
+    my $themes_dir = $config->{'themes_path'} || $config->{home}."/themes";
     $themes_dir = $themes_dir.'/themes-enabled/*/';
 
     my @themes;
@@ -93,15 +128,22 @@ sub finalize_config {
 
     print STDERR "using themes: ".$themes_dir."\n" if $ENV{'THRUK_PLUGIN_DEBUG'};
 
-    $c->config->{'View::TT'}->{'PRE_DEFINE'}->{'themes'} = \@themes;
+    $config->{'View::TT'}->{'PRE_DEFINE'}->{'themes'} = \@themes;
 
     ###################################################
     # use uid to make tmp dir more uniq
-    $c->config->{'tmp_path'} = '/tmp/thruk_'.$> unless defined $c->config->{'tmp_path'};
-    $c->config->{'View::TT'}->{'COMPILE_DIR'} = $c->config->{'tmp_path'}.'/ttc_'.$>;
+    $config->{'tmp_path'} = '/tmp/thruk_'.$> unless defined $config->{'tmp_path'};
+    $config->{'tmp_path'} =~ s|/$||mx;
+    $config->{'View::TT'}->{'COMPILE_DIR'} = $config->{'tmp_path'}.'/ttc_'.$>;
+
+    $config->{'ssi_path'} = $config->{'ssi_path'} || $config->{home}.'/ssi';
+
+    # set default config
+    Thruk::Config::set_default_config($config);
 
     return;
 }
+
 
 1;
 

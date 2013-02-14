@@ -107,6 +107,7 @@ sub report_send {
     $c->stash->{'r'} = $report;
 
     my $attachment = generate_report($c, $nr, $report);
+    $report        = _read_report_file($c, $nr); # update report data, attachment would be wrong otherwise
     if(defined $attachment) {
 
         $c->stash->{'block'} = 'mail';
@@ -190,6 +191,7 @@ save a report
 =cut
 sub report_save {
     my($c, $nr, $data) = @_;
+
     Thruk::Utils::IO::mkdir($c->config->{'var_path'}.'/reports/',
                             $c->config->{'tmp_path'}.'/reports/');
     my $file = $c->config->{'var_path'}.'/reports/'.$nr.'.rpt';
@@ -200,6 +202,8 @@ sub report_save {
     }
     my $report       = _get_new_report($c, $data);
     $report->{'var'} = $old_report->{'var'} if defined $old_report->{'var'};
+    my $fields       = _get_required_fields($c, $report);
+    _verify_fields($c, $fields, $report);
     return _report_save($c, $nr, $report);
 }
 
@@ -254,6 +258,11 @@ sub generate_report {
     $options = _read_report_file($c, $nr) unless defined $options;
     return unless defined $options;
 
+    if(defined $options->{'var'}->{'opt_errors'}) {
+        print STDERR join("\n", @{$options->{'var'}->{'opt_errors'}});
+        exit 1;
+    }
+
     Thruk::Utils::set_user($c, $options->{'user'});
     $ENV{'REMOTE_USER'} = $options->{'user'};
 
@@ -288,6 +297,10 @@ sub generate_report {
         $options->{'backends'} = ref $options->{'backends'} eq 'ARRAY' ? $options->{'backends'} : [ $options->{'backends'} ];
     }
     local $ENV{'THRUK_BACKENDS'} = join(',', @{$options->{'backends'}}) if(defined $options->{'backends'} and scalar @{$options->{'backends'}} > 0);
+
+    # need to update defaults backends
+    my($disabled_backends,$has_groups) = Thruk::Action::AddDefaults::_set_enabled_backends($c);
+    Thruk::Action::AddDefaults::_set_possible_backends($c, $disabled_backends);
 
     # set some defaults
     Thruk::Utils::PDF::set_unavailable_states([qw/DOWN UNREACHABLE CRITICAL UNKNOWN/]);
@@ -496,7 +509,7 @@ sub _report_save {
     delete $report->{'failed'};
 
     Thruk::Utils::write_data_file($file, $report);
-    return $nr;
+    return $report;
 }
 
 ##########################################################
@@ -601,7 +614,7 @@ sub _get_report_cmd {
     }
     my $nice = '/usr/bin/nice';
     if(-e '/bin/nice') { $nice = '/bin/nice'; }
-    if($c->config->{'report_nice_level'} > 0) {
+    if(defined $c->config->{'report_nice_level'} and $c->config->{'report_nice_level'} > 0) {
         $thruk_bin = $nice.' -n '.$c->config->{'report_nice_level'}.' '.$thruk_bin;
     }
     my $cmd = sprintf("cd %s && %s '%s --local -a % 10s=%-3s' >/dev/null 2>%s/reports/%d.log",
@@ -614,6 +627,58 @@ sub _get_report_cmd {
                             $report->{'nr'},
                     );
     return $cmd;
+}
+
+##########################################################
+sub _get_required_fields {
+    my($c, $report) = @_;
+
+    $c->stash->{'block'} = 'edit';
+    $c->stash->{'temp'}  = 'pdf/'.$report->{'template'};
+    $c->stash->{'var'}   = 'required_fields';
+    my $data;
+    eval {
+        $data = $c->view('TT')->render($c, 'get_variable.tt');
+    };
+    if($@) {
+        Thruk::Utils::CLI::_error($@);
+        return $c->detach('/error/index/13');
+    }
+
+    my $VAR1;
+    ## no critic
+    eval($data);
+    ## use critic
+    return $VAR1;
+}
+
+##########################################################
+sub _verify_fields {
+    my($c, $fields, $report) = @_;
+    return unless defined $fields;
+    return unless ref $fields eq 'ARRAY';
+    delete $report->{'var'}->{'opt_errors'};
+    my @errors;
+
+    for my $d (@{$fields}) {
+        my $key = (keys %{$d})[0];
+        my $f   = $d->{$key};
+
+        # required fields
+        if(defined $f->[4] and (!defined $report->{'params'}->{$key} or $report->{'params'}->{$key} =~ m/^\s*$/mx)) {
+            push @errors, $f->[0].': required field';
+        }
+
+        # regular expressions
+        if($f->[1] eq 'pattern' and !Thruk::Utils::is_valid_regular_expression($c, $report->{'params'}->{$key})) {
+            push @errors, $f->[0].': invalid regular expression';
+        }
+    }
+    if(scalar @errors > 0) {
+        Thruk::Utils::set_message( $c, 'fail_message', 'Found errors in report options:', \@errors );
+        $report->{'var'}->{'opt_errors'} = \@errors;
+    }
+    return;
 }
 
 ##########################################################

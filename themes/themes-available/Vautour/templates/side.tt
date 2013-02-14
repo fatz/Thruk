@@ -27,7 +27,10 @@
 
 
     [% FOREACH section = navigation %]
-      <h2>[% section.name %]</h2>
+      [% cookie_section_name = section.name.replace(' ', '_') | lower %]
+      <div>
+      <div class="navsectiontitle clickable"><h2>[% section.name %]</h2></div>
+      <div class="navsectionlinks"[% IF menu_states.exists(cookie_section_name) && menu_states.$cookie_section_name == 0 %] style="display:none;"[% END %]>
       <ul>
       [% FOREACH link = section.links %]
         [%+ IF link.href %]
@@ -47,7 +50,7 @@
             <input type='hidden' name='hidesearch' value='2' />
             <input type='hidden' name='s0_op' value='~' />
             <input type='hidden' name='s0_type' value='search' />
-            <input type='text' name='s0_value' id="NavBarSearchItem" />
+            <input type='text' name='s0_value' id="s0_value" class="NavBarSearchItem" />
             [% ELSE %]
             <input id="search" name="host" type="text" />
             <input type="hidden" name="navbarsearch" id="NavBarSearchItem" value="1" />
@@ -59,10 +62,14 @@
         [% END %]
       [% END %]
       </ul>
+      </div>
+      </div>
     [% END %]
     </div>
 
 [% PROCESS _ajax_search.tt %]
+[% PROCESS _side_js.tt %]
+
 [% IF use_frames %]
   </body>
 </html>

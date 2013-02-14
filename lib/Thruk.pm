@@ -13,16 +13,21 @@ Catalyst based monitoring web interface for Nagios, Icinga and Shinken
 use 5.008000;
 use strict;
 use warnings;
+use threads;
 
 use utf8;
+use Thruk::Pool::Simple;
 use Carp;
+use Moose;
 use GD;
 use POSIX qw(tzset);
 use Log::Log4perl::Catalyst;
 use Digest::MD5 qw(md5_hex);
 use File::Slurp qw(read_file);
 use Data::Dumper;
+use Thruk::Config;
 use Thruk::Backend::Manager;
+use Thruk::Backend::Peer;
 use Thruk::Utils;
 use Thruk::Utils::Auth;
 use Thruk::Utils::Filter;
@@ -31,10 +36,6 @@ use Thruk::Utils::Menu;
 use Thruk::Utils::Avail;
 use Thruk::Utils::External;
 use Catalyst::Runtime '5.70';
-
-binmode(STDOUT, ":encoding(UTF-8)");
-binmode(STDERR, ":encoding(UTF-8)");
-$Data::Dumper::Sortkeys = 1;
 
 ###################################################
 # Set flags and add plugins for the application
@@ -55,201 +56,75 @@ use Catalyst qw/
                 Cache
                 Thruk::RemoveNastyCharsFromHttpParam
                 /;
-our $VERSION = '1.40';
 
 ###################################################
-# Configure the application.
-#
-# Note that settings in thruk.conf (or other external
-# configuration file that you set up manually) take precedence
-# over this when using ConfigLoader. Thus configuration
-# details given here can function as a default configuration,
-# with a external configuration file acting as an override for
-# local deployment.
-my $project_root = __PACKAGE__->config->{home};
-my $branch       = '';
-$branch          = Thruk::Utils::get_git_name($project_root) unless $branch ne '';
-my %config = ('name'                   => 'Thruk',
-              'version'                => $VERSION,
-              'released'               => 'August 03, 2012',
-              'compression_format'     => 'gzip',
-              'ENCODING'               => 'utf-8',
-              'image_path'             => $project_root.'/root/thruk/images',
-              'project_root'           => $project_root,
-              'min_livestatus_version' => '1.1.3',
-              'default_view'           => 'TT',
-              'View::TT'               => {
-                  TEMPLATE_EXTENSION => '.tt',
-                  ENCODING           => 'utf8',
-                  INCLUDE_PATH       => $project_root.'/templates',
-                  FILTERS            => {
-                                          'duration'            => \&Thruk::Utils::Filter::duration,
-                                          'nl2br'               => \&Thruk::Utils::Filter::nl2br,
-                                          'strip_command_args'  => \&Thruk::Utils::Filter::strip_command_args,
-                                          'escape_html'         => \&Thruk::Utils::Filter::escape_html,
-                                      },
-                  PRE_DEFINE         => {
-                                          'sprintf'             => \&Thruk::Utils::Filter::sprintf,
-                                          'duration'            => \&Thruk::Utils::Filter::duration,
-                                          'name2id'             => \&Thruk::Utils::Filter::name2id,
-                                          'as_url_arg'          => \&Thruk::Utils::Filter::as_url_arg,
-                                          'uri'                 => \&Thruk::Utils::Filter::uri,
-                                          'full_uri'            => \&Thruk::Utils::Filter::full_uri,
-                                          'short_uri'           => \&Thruk::Utils::Filter::short_uri,
-                                          'uri_with'            => \&Thruk::Utils::Filter::uri_with,
-                                          'clean_referer'       => \&Thruk::Utils::Filter::clean_referer,
-                                          'escape_html'         => \&Thruk::Utils::Filter::escape_html,
-                                          'escape_xml'          => \&Thruk::Utils::Filter::escape_xml,
-                                          'escape_js'           => \&Thruk::Utils::Filter::escape_js,
-                                          'escape_quotes'       => \&Thruk::Utils::Filter::escape_quotes,
-                                          'escape_bslash'       => \&Thruk::Utils::Filter::escape_bslash,
-                                          'get_message'         => \&Thruk::Utils::Filter::get_message,
-                                          'throw'               => \&Thruk::Utils::Filter::throw,
-                                          'date_format'         => \&Thruk::Utils::Filter::date_format,
-                                          'format_date'         => \&Thruk::Utils::format_date,
-                                          'format_cronentry'    => \&Thruk::Utils::format_cronentry,
-                                          'nl2br'               => \&Thruk::Utils::Filter::nl2br,
-                                          'action_icon'         => \&Thruk::Utils::Filter::action_icon,
-                                          'logline_icon'        => \&Thruk::Utils::Filter::logline_icon,
-                                          'calculate_first_notification_delay_remaining' => \&Thruk::Utils::Filter::calculate_first_notification_delay_remaining,
-
-                                          'version'        => $VERSION,
-                                          'branch'         => $branch,
-                                          'debug_details'  => Thruk::Utils::get_debug_details(),
-                                          'stacktrace'     => '',
-                                          'backends'       => [],
-                                          'param_backend'  => '',
-                                          'refresh_rate'   => '',
-                                          'page'           => '',
-                                          'title'          => '',
-                                          'remote_user'    => '?',
-                                          'infoBoxTitle'   => '',
-                                          'has_proc_info'  => 0,
-                                          'has_expire_acks'=> 0,
-                                          'no_auto_reload' => 0,
-                                          'die_on_errors'  => 0,        # used in cmd.cgi
-                                          'errorMessage'   => 0,        # used in errors
-                                          'errorDetails'   => '',       # used in errors
-                                          'js'             => [],       # used in _header.tt
-                                          'css'            => [],       # used in _header.tt
-                                          'extra_header'   => '',       # used in _header.tt
-                                          'ssi_header'     => '',       # used in _header.tt
-                                          'ssi_footer'     => '',       # used in _header.tt
-                                          'original_url'   => '',       # used in _header.tt
-                                          'paneprefix'     => 'dfl_',   # used in _status_filter.tt
-                                          'sortprefix'     => '',       # used in _status_detail_table.tt / _status_hostdetail_table.tt
-                                          'show_form'      => '1',      # used in _status_filter.tt
-                                          'show_top_pane'  => 0,        # used in _header.tt on status pages
-                                          'thruk_debug'    => 0,
-                                          'all_in_one_css' => 0,
-                                          'hide_backends_chooser' => 0,
-                                          'backend_chooser'       => 'select',
-                                          'play_sounds'    => 0,
-                                          'uri_filter'     => {
-                                                'bookmark'      => undef,
-                                                'referer'       => undef,
-                                                'reload_nav'    => undef,
-                                                'update.y'      => undef,
-                                                'update.x'      => undef,
-                                                '_'             => undef,
-                                          },
-                                          'all_in_one_javascript' => [
-                                              'jquery-1.7.2.min.js',
-                                              'thruk-'.$VERSION.'.js',
-                                              'cal/jscal2.js',
-                                              'overlib.js',
-                                              'jquery-fieldselection.js',
-                                              'jquery-ui/js/jquery-ui-1.8.16.custom.min.js',
-                                          ],
-                                          'all_in_one_css_frames' => [
-                                               'thruk_global.css',
-                                               'Thruk.css'
-                                          ],
-                                          'all_in_one_css_noframes' => [
-                                              'thruk_global.css',
-                                              'thruk_noframes.css',
-                                              'Thruk.css',
-                                          ],
-                                      },
-                  PRE_CHOMP          => 1,
-                  POST_CHOMP         => 1,
-                  TRIM               => 1,
-                  COMPILE_EXT        => '.ttc',
-                  STAT_TTL           => 3600,
-                  STRICT             => 0,
-                  render_die         => 1,
-              },
-              nagios => {
-                  service_state_by_number => {
-                                    0 => 'OK',
-                                    1 => 'WARNING',
-                                    2 => 'CRITICAL',
-                                    3 => 'UNKNOWN',
-                                    4 => 'PENDING',
-                                },
-                  host_state_by_number => {
-                                    0 => 'OK',
-                                    1 => 'DOWN',
-                                    2 => 'UNREACHABLE',
-                                },
-              },
-              'View::GD'               => {
-                  gd_image_type      => 'png',
-              },
-              'View::JSON'               => {
-                  expose_stash       => 'json',
-                  json_driver        => 'XS',
-              },
-              'Plugin::Thruk::ConfigLoader' => { file => $project_root.'/thruk.conf' },
-              'Plugin::Authentication' => {
-                  default_realm => 'Thruk',
-                  realms => {
-                      Thruk => { credential => { class => 'Thruk'       },
-                                 store      => { class => 'FromCGIConf' },
-                      }
-                  }
-              },
-              'custom-error-message' => {
-                  'error-template'    => 'error.tt',
-                  'response-status'   => 500,
-              },
-              'static'               => {
-                  'ignore_extensions' => [ qw/tpl tt tt2/ ],
-              },
-              'Plugin::Cache'        => {
-                  'backend'           => {
-                    'class'            => "Catalyst::Plugin::Cache::Backend::Memory",
-                  },
-              },
-);
-# set TT strict mode only for authors
-if(-f $project_root."/.author") {
-    $config{'View::TT'}->{'STRICT'}     = 1;
-    $config{'View::TT'}->{'CACHE_SIZE'} = 0;
-    $config{'View::TT'}->{'STAT_TTL'}   = 5;
-    $config{'View::TT'}->{'PRE_DEFINE'}->{'thruk_debug'} = 1;
-}
-$config{'View::TT'}->{'PRE_DEFINE'}->{'released'}      = $config{released};
-$config{'View::Excel::Template::Plus'}->{'etp_config'} = $config{'View::TT'}; # use same config for View::Excel as in View::TT
-$config{'View::PDF::Reuse'}                            = $config{'View::TT'}; # use same config as well
-
-###################################################
-# set some defaults
-__PACKAGE__->config->{'cgi.cfg'}  = exists __PACKAGE__->config->{'cgi.cfg'}  ? __PACKAGE__->config->{'cgi.cfg'}  : 'cgi.cfg';
+our $VERSION = '1.63';
 
 ###################################################
 # load config loader
-__PACKAGE__->config(%config);
+__PACKAGE__->config(%Thruk::Config::config);
+
+###################################################
+# install leak checker
+if($ENV{THRUK_LEAK_CHECK}) {
+    eval {
+        with 'CatalystX::LeakChecker';
+        $Devel::Cycle::already_warned{'GLOB'} = 1;
+    };
+    print STDERR "failed to load CatalystX::LeakChecker: ".$@ if $@;
+}
 
 ###################################################
 # Start the application and make __PACKAGE__->config
 # accessible
 # override config in Catalyst::Plugin::Thruk::ConfigLoader
 __PACKAGE__->setup();
+$Thruk::Utils::IO::config = __PACKAGE__->config;
 
 ###################################################
-# save user/group id
-my $var_path = __PACKAGE__->config->{'var_path'} or die("no var path!");
+# create connection pool
+# has to be done before the binmode
+my $peer_configs = __PACKAGE__->config->{'Thruk::Backend'}->{'peer'};
+$peer_configs    = ref $peer_configs eq 'HASH' ? [ $peer_configs ] : $peer_configs;
+$peer_configs    = [] unless defined $peer_configs;
+my $num_peers    = scalar @{$peer_configs};
+my $pool_size    = __PACKAGE__->config->{'connection_pool_size'};
+if($num_peers > 0) {
+    my  $peer_keys   = {};
+    our $peer_order  = [];
+    our $peers       = {};
+    for my $peer_config (@{$peer_configs}) {
+        my $peer = Thruk::Backend::Peer->new( $peer_config, __PACKAGE__->config->{'logcache'}, $peer_keys );
+        $peer_keys->{$peer->{'key'}} = 1;
+        $peers->{$peer->{'key'}}     = $peer;
+        push @{$peer_order}, $peer->{'key'};
+    }
+    if($num_peers > 1 and $pool_size > 1) {
+        $Storable::Eval    = 1;
+        $Storable::Deparse = 1;
+        my $minworker = $pool_size;
+        $minworker    = $num_peers if $minworker > $num_peers; # no need for more threads than sites
+        my $maxworker = $minworker; # static pool size
+        $SIG{'USR1'} = undef;
+        our $pool = Thruk::Pool::Simple->new(
+            min      => $minworker,
+            max      => $maxworker,
+            do       => [\&Thruk::Backend::Manager::_do_thread ],
+            passid   => 0,
+            lifespan => 10000,
+        );
+        # wait till we got all worker running
+        my $worker = 0;
+        while($worker < $minworker) { sleep(0.3); $worker = do { lock ${$pool->{worker}}; ${$pool->{worker}} }; }
+    } else {
+        $ENV{'THRUK_NO_CONNECTION_POOL'} = 1;
+    }
+}
+
+###################################################
+binmode(STDOUT, ":encoding(UTF-8)");
+binmode(STDERR, ":encoding(UTF-8)");
+$Data::Dumper::Sortkeys = 1;
 
 ###################################################
 # save pid
@@ -257,7 +132,11 @@ Thruk::Utils::IO::mkdir(__PACKAGE__->config->{'tmp_path'});
 my $pidfile  = __PACKAGE__->config->{'tmp_path'}.'/thruk.pid';
 sub _remove_pid {
     if(defined $ENV{'THRUK_SRC'} and $ENV{'THRUK_SRC'} eq 'FastCGI') {
-        unlink($pidfile);
+        if(-f $pidfile) {
+            my $pid = read_file($pidfile);
+            chomp($pid);
+            unlink($pidfile) if $pid == $$;
+        }
     }
     return;
 }
@@ -275,6 +154,7 @@ END {
 ###################################################
 # create secret file
 if(!defined $ENV{'THRUK_SRC'} or $ENV{'THRUK_SRC'} ne 'SCRIPTS') {
+    my $var_path   = __PACKAGE__->config->{'var_path'} or die("no var path!");
     my $secretfile = $var_path.'/secret.key';
     unless(-s $secretfile) {
         my $digest = md5_hex(rand(1000).time());
@@ -302,7 +182,7 @@ if(defined $timezone) {
 
 ###################################################
 # set installed server side includes
-my $ssi_dir = __PACKAGE__->config->{'ssi_path'} || $project_root."/ssi/";
+my $ssi_dir = __PACKAGE__->config->{'ssi_path'};
 my (%ssi, $dh);
 if(!-e $ssi_dir) {
     warn("cannot access ssi_path $ssi_dir: $!");
@@ -337,27 +217,13 @@ if(!defined $ENV{'THRUK_SRC'} or ($ENV{'THRUK_SRC'} ne 'CLI' and $ENV{'THRUK_SRC
     if(defined __PACKAGE__->config->{'log4perl_conf'} and ! -s __PACKAGE__->config->{'log4perl_conf'} ) {
         die("\n\n*****\nfailed to load log4perl config: ".__PACKAGE__->config->{'log4perl_conf'}.": ".$!."\n*****\n\n");
     }
-    $log4perl_conf = __PACKAGE__->config->{'log4perl_conf'} || $project_root.'/log4perl.conf';
+    $log4perl_conf = __PACKAGE__->config->{'log4perl_conf'} || __PACKAGE__->config->{'home'}.'/log4perl.conf';
 }
 if(defined $log4perl_conf and -s $log4perl_conf) {
     __PACKAGE__->log(Log::Log4perl::Catalyst->new($log4perl_conf));
 }
 elsif(!__PACKAGE__->debug) {
     __PACKAGE__->log->levels( 'info', 'warn', 'error', 'fatal' );
-}
-
-###################################################
-# additional user template paths?
-if(defined __PACKAGE__->config->{'user_template_path'}) {
-    unshift @{__PACKAGE__->config->{templates_paths}}, __PACKAGE__->config->{'user_template_path'};
-}
-
-###################################################
-__PACKAGE__->config->{'omd_version'} = "";
-if(defined $ENV{'OMD_ROOT'} and -s $ENV{'OMD_ROOT'}."/version") {
-    my $omdlink = readlink($ENV{'OMD_ROOT'}."/version");
-    $omdlink    =~ s/.*?\///gmx;
-    __PACKAGE__->config->{'omd_version'} = $omdlink;
 }
 
 ###################################################
@@ -377,6 +243,31 @@ sub check_user_roles_wrapper {
         return 1;
     }
     return 0;
+}
+
+###################################################
+
+=head2 found_leaks
+
+called by CatalystX::LeakChecker and used for testing purposes only
+
+=cut
+sub found_leaks {
+    my ($c, @leaks) = @_;
+    return unless scalar @leaks > 0;
+    my $sym = 'a';
+    print STDERR "found leaks:\n";
+    for my $leak (@leaks) {
+        my $msg = (CatalystX::LeakChecker::format_leak($leak, \$sym));
+        $c->log->error($msg);
+        print STDERR $msg,"\n";
+    }
+    if(defined $ENV{'THRUK_SRC'} and $ENV{'THRUK_SRC'} eq 'TEST_LEAK') {
+        die("tests die, exit otherwise");
+    }
+    # die() won't let our tests exit, so we use exit here
+    exit 1;
+    return;
 }
 
 =head1 SEE ALSO

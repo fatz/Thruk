@@ -29,6 +29,7 @@ script/thruk.lib
 script/thruk_update_docs.sh
 script/thruk_update_table_docs.pl
 script/thruk_extract_cmd_templates.pl
+script/wkhtmltopdf
 t/xt
 root/thruk/plugins/.*
 root/shinken
@@ -38,9 +39,10 @@ cgi_local.cfg
 ^htpasswd
 .*\.gz
 cgi\.cfg\-.*
+cgi\.cfg\..*
 # does not work for centos without F::C::R installed
 inc/File/Copy/Recursive.pm
-var
+^var/
 ^log4perl.conf$
 TODO
 docs/development
@@ -50,9 +52,11 @@ thruk_.*.changes
 thruk_.*.deb
 thruk_.*.dsc
 debian/thruk/.*
+debian/thruk.substvars
 build-stamp
 configure-stamp
 debian/files
 debian/thruk.debhelper.log
 my_templates/
 panorama_default_view
+themes/themes-available/.*/images/logos/.*server.png

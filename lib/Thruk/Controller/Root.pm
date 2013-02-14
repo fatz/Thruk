@@ -7,6 +7,7 @@ use parent 'Catalyst::Controller';
 use Data::Dumper;
 use URI::Escape;
 use File::Slurp;
+use JSON::XS;
 
 #
 # Sets the actions in this controller to be registered with no prefix
@@ -38,129 +39,6 @@ begin, running at the begin of every req
 sub begin : Private {
     my( $self, $c ) = @_;
 
-    # defaults
-    $c->config->{'url_prefix'} = exists $c->config->{'url_prefix'} ? $c->config->{'url_prefix'} : '/';
-    my $defaults = {
-        backend_debug                   => 0,
-        use_ajax_search                 => 1,
-        ajax_search_hosts               => 1,
-        ajax_search_hostgroups          => 1,
-        ajax_search_services            => 1,
-        ajax_search_servicegroups       => 1,
-        ajax_search_timeperiods         => 1,
-        shown_inline_pnp                => 1,
-        use_feature_trends              => 1,
-        use_wait_feature                => 1,
-        wait_timeout                    => 10,
-        use_frames                      => 1,
-        use_strict_host_authorization   => 0,
-        make_auth_user_lowercase        => 0,
-        make_auth_user_uppercase        => 0,
-        can_submit_commands             => 1,
-        group_paging_overview           => '*3, 10, 100, all',
-        group_paging_grid               => '*5, 10, 50, all',
-        group_paging_summary            => '*10, 50, 100, all',
-        default_theme                   => 'Thruk',
-        datetime_format                 => '%Y-%m-%d  %H:%M:%S',
-        datetime_format_long            => '%a %b %e %H:%M:%S %Z %Y',
-        datetime_format_today           => '%H:%M:%S',
-        datetime_format_log             => '%B %d, %Y  %H',
-        datetime_format_trends          => '%a %b %e %H:%M:%S %Y',
-        title_prefix                    => '',
-        use_pager                       => 1,
-        start_page                      => $c->config->{'url_prefix'}.'thruk/main.html',
-        documentation_link              => $c->config->{'url_prefix'}.'thruk/docs/index.html',
-        show_notification_number        => 1,
-        strict_passive_mode             => 1,
-        show_full_commandline           => 1,
-        show_modified_attributes        => 1,
-        show_config_edit_buttons        => 0,
-        show_backends_in_table          => 0,
-        backends_with_obj_config        => {},
-        use_feature_statusmap           => 0,
-        use_feature_statuswrl           => 0,
-        use_feature_histogram           => 0,
-        use_feature_configtool          => 0,
-        use_new_search                  => 1,
-        use_new_command_box             => 1,
-        all_problems_link               => $c->config->{'url_prefix'}."thruk/cgi-bin/status.cgi?style=combined&amp;hst_s0_hoststatustypes=4&amp;hst_s0_servicestatustypes=31&amp;hst_s0_hostprops=10&amp;hst_s0_serviceprops=0&amp;svc_s0_hoststatustypes=3&amp;svc_s0_servicestatustypes=28&amp;svc_s0_hostprops=10&amp;svc_s0_serviceprops=10&amp;svc_s0_hostprop=2&amp;svc_s0_hostprop=8&amp;title=All+Unhandled+Problems",
-        statusmap_default_groupby       => 'address',
-        statusmap_default_type          => 'table',
-        show_long_plugin_output         => 'popup',
-        info_popup_event_type           => 'onclick',
-        info_popup_options              => 'STICKY,CLOSECLICK,HAUTO,MOUSEOFF',
-        cmd_quick_status                => {
-                    reschedule             => 1,
-                    downtime               => 1,
-                    comment                => 1,
-                    acknowledgement        => 1,
-                    active_checks          => 1,
-                    notifications          => 1,
-                    submit_result          => 1,
-                    reset_attributes       => 1,
-        },
-        cmd_defaults                    => {
-                    ahas                   => 0,
-                    broadcast_notification => 0,
-                    force_check            => 0,
-                    force_notification     => 0,
-                    send_notification      => 1,
-                    sticky_ack             => 1,
-                    persistent_comments    => 1,
-                    persistent_ack         => 0,
-                    ptc                    => 0,
-                    use_expire             => 0,
-        },
-        command_disabled                    => {},
-        downtime_duration                   => 7200,
-        expire_ack_duration                 => 86400,
-        show_custom_vars                    => [],
-        themes_path                         => './themes',
-        priorities                      => {
-                    5                       => 'Business Critical',
-                    4                       => 'Top Production',
-                    3                       => 'Production',
-                    2                       => 'Standard',
-                    1                       => 'Testing',
-                    0                       => 'Development',
-        },
-        no_external_job_forks               => 0,
-        host_action_icon                    => 'action.gif',
-        service_action_icon                 => 'action.gif',
-        cookie_path                         => $c->config->{'url_prefix'}.'thruk',
-        thruk_bin                           => '/usr/bin/thruk',
-        thruk_init                          => '/etc/init.d/thruk',
-        thruk_shell                         => '/bin/bash -l -c',
-        report_nice_level                   => 5,
-        weekdays                        => {
-                    '0'                     => 'Sunday',
-                    '1'                     => 'Monday',
-                    '2'                     => 'Tuesday',
-                    '3'                     => 'Wednesday',
-                    '4'                     => 'Thursday',
-                    '5'                     => 'Friday',
-                    '6'                     => 'Saterday',
-                    '7'                     => 'Sunday',
-                                           },
-        'mobile_agent'                  => 'iPhone,Android,IEMobile',
-        'show_error_reports'            => 1,
-    };
-    $defaults->{'thruk_bin'} = 'script/thruk' if -f 'script/thruk';
-    for my $key (keys %{$defaults}) {
-        $c->config->{$key} = exists $c->config->{$key} ? $c->config->{$key} : $defaults->{$key};
-    }
-
-    # make a nice path
-    for my $key (qw/tmp_path var_path/) {
-        $c->config->{$key} =~ s/\/$//mx;
-    }
-
-    for my $key (qw/cmd_quick_status cmd_defaults/) {
-        for my $key2 ( %{$defaults->{$key}} ) {
-            $c->config->{$key}->{$key2} = $defaults->{$key}->{$key2} unless defined $c->config->{$key}->{$key2};
-        }
-    }
-
     # make some configs available in stash
     for my $key (qw/url_prefix title_prefix use_pager start_page documentation_link
                   use_feature_statusmap use_feature_statuswrl use_feature_histogram use_feature_configtool
@@ -169,25 +47,13 @@ sub begin : Private {
                   show_full_commandline all_problems_link use_ajax_search show_long_plugin_output
                   priorities show_modified_attributes downtime_duration expire_ack_duration
                   show_backends_in_table host_action_icon service_action_icon cookie_path
-                  use_feature_trends show_error_reports
+                  use_feature_trends show_error_reports skip_js_errors perf_bar_mode
+                  bug_email_rcpt home_link first_day_of_week sitepanel
                 /) {
         $c->stash->{$key} = $c->config->{$key};
     }
 
-    # command disabled should be a hash
-    if(ref $c->config->{'command_disabled'} ne 'HASH') {
-        $c->config->{'command_disabled'} = Thruk::Utils::array2hash(Thruk::Utils::expand_numeric_list($c, $c->config->{'command_disabled'}));
-    }
-
-    # external jobs can be disabled by env
-    if(defined $ENV{'NO_EXTERNAL_JOBS'}) {
-        $c->config->{'no_external_job_forks'} = 1;
-    }
-
-    # username?
-    if($c->user_exists) {
-        $c->stash->{'remote_user'}  = $c->user->get('username');
-    }
+    # user data
     $c->stash->{'user_data'} = { bookmarks => {} };
 
     # frame options
@@ -227,12 +93,16 @@ sub begin : Private {
     $theme = $c->config->{'default_theme'} unless defined $available_themes->{$theme};
     $c->stash->{'theme'} = $theme;
     if( defined $c->config->{templates_paths} ) {
-        $c->stash->{additional_template_paths} = [ @{ $c->config->{templates_paths} }, $c->config->{themes_path}.'/themes-enabled/'.$theme.'/templates' ];
+        # themes have to override plugins templates
+        $c->stash->{additional_template_paths} = [ $c->config->{themes_path}.'/themes-enabled/'.$theme.'/templates', @{ $c->config->{templates_paths} } ];
     }
     else {
         $c->stash->{additional_template_paths} = [ $c->config->{themes_path}.'/themes-enabled/'.$theme.'/templates' ];
     }
-    $c->stash->{all_in_one_css} = 1 if $theme eq 'Thruk';
+    $c->stash->{all_in_one_css} = 0;
+    if($theme eq 'Thruk') {
+        $c->stash->{all_in_one_css} = 1;
+    }
 
     if(exists $c->{'request'}->{'parameters'}->{'noheader'}) {
         $c->{'request'}->{'parameters'}->{'hidetop'}  = 1;
@@ -242,22 +112,40 @@ sub begin : Private {
     # minmal custom monitor screen
     $c->stash->{minimal}               = $c->{'request'}->{'parameters'}->{'minimal'} || '';
     $c->stash->{show_nav_button}       = 0 if $c->stash->{minimal};
-    $c->stash->{hide_backends_chooser} = 1 if $c->stash->{minimal};
 
     # initialize our backends
     unless ( defined $c->{'db'} ) {
         $c->{'db'} = $c->model('Thruk');
         if( defined $c->{'db'} ) {
             $c->{'db'}->init(
-                'stats'               => $c->stats,
-                'log'                 => $c->log,
-                'config'              => $c->config,
-                'backend_debug'       => $c->config->{'backend_debug'},
+                'backend_debug' => $c->config->{'backend_debug'},
             );
         }
     }
     # needed for the autoload methods
-    $Thruk::Backend::Manager::stats = $c->stats;
+    $Thruk::Backend::Manager::c     = $c;
+
+    # menu cookie set?
+    my $menu_states = {};
+    for my $key (keys %{$c->config->{'initial_menu_state'}}) {
+        my $val = $c->config->{'initial_menu_state'}->{$key};
+        $key = lc $key;
+        $key =~ s/\ /_/gmx;
+        $menu_states->{$key} = $val;
+    }
+    if( defined $c->request->cookie('thruk_side') ) {
+        my $cookie_val = $c->request->cookie('thruk_side')->{'value'};
+        if(ref $cookie_val ne 'ARRAY') { $cookie_val = [$cookie_val]; }
+        for my $state (@{$cookie_val}) {
+            my($k,$v) = split(/=/mx,$state,2);
+            $k = lc $k;
+            $k =~ s/\ /_/gmx;
+            $menu_states->{$k} = $v;
+        }
+    }
+
+    $c->stash->{'menu_states'}      = $menu_states;
+    $c->stash->{'menu_states_json'} = encode_json($menu_states);
 
     my $target = $c->{'request'}->{'parameters'}->{'target'};
     if( !$c->stash->{'use_frames'} and defined $target and $target eq '_parent' ) {
@@ -275,6 +163,9 @@ sub begin : Private {
            or $c->request->action =~ m|thruk\\\/\w+\\.html|mx
            or $c->request->action =~ m|thruk\\/cgi\\-bin\\/conf\\.cgi\?sub=backends|mx
            or $c->request->action =~ m|thruk\\/cgi\\-bin\\/remote\\.cgi|mx
+           or $c->request->action =~ m|thruk\\/cgi\\-bin\\/login\\.cgi|mx
+           or $c->request->action =~ m|thruk\\/cgi\\-bin\\/restricted\\.cgi|mx
+           or $c->request->action =~ m|^/$|mx
            or $c->request->action eq 'thruk$'
            or $c->request->action eq 'thruk\\/docs\\/' ) {
             $c->stash->{'no_auto_reload'} = 1;
@@ -322,6 +213,21 @@ sub begin : Private {
         if(defined $sound_cookie->value and $sound_cookie->value eq 'on') {
             $c->stash->{'play_sounds'} = 1;
         }
+    }
+
+    # favicon cookie set?
+    if(defined $c->request->cookie('thruk_favicon')) {
+        my $favicon_cookie = $c->request->cookie('thruk_favicon');
+        if(defined $favicon_cookie->value and $favicon_cookie->value eq 'off') {
+            $c->stash->{'fav_counter'} = 0;
+        }
+        if(defined $favicon_cookie->value and $favicon_cookie->value eq 'on') {
+            $c->stash->{'fav_counter'} = 1;
+        }
+    }
+
+    if( defined $c->request->cookie('thruk_auth') ) {
+        $c->stash->{'cookie_auth'} = 1;
     }
 
     # make private _ hash keys available
@@ -584,7 +490,8 @@ sub thruk_docs : Regex('thruk\/docs\/') :MyAction('AddDefaults') {
     $c->stash->{'no_auto_reload'}        = 1;
     $c->stash->{'hide_backends_chooser'} = 1;
     $c->stash->{'template'}              = 'docs.tt';
-    $c->stash->{page}                    = 'splashpage';
+    $c->stash->{'extrabodyclass'}        = 'docs';
+    $c->stash->{'page'}                  = 'splashpage';
 
     return 1;
 }
@@ -788,6 +695,20 @@ sub job_cgi : Regex('thruk\/cgi\-bin\/job.cgi') :MyAction('AddSafeDefaults') {
 
 ######################################
 
+=head2 test_cgi
+
+page: /thruk/cgi-bin/test.cgi
+
+=cut
+
+sub test_cgi : Regex('thruk\/cgi\-bin\/test\.cgi') {
+    my( $self, $c ) = @_;
+    return if defined $c->{'canceled'};
+    return $c->detach('/test/index');
+}
+
+######################################
+
 =head2 end
 
 check and display errors (if any)
@@ -809,6 +730,8 @@ sub end : ActionClass('RenderView') {
 
     return 1;
 }
+
+######################################
 
 =head1 AUTHOR
 
