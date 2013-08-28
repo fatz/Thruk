@@ -21,7 +21,7 @@ Catalyst Controller.
 =head2 simplestat.cgi
 
 =cut
-sub index : Path('/thruk/cgi-bin/statuswml.cgi') {
+sub index : Path('/thruk/cgi-bin/simplestat.cgi') {
     my ( $self, $c ) = @_;
 
     my $hostfilter = [ { 'state'=> { '>' => 0 } }, {'has_been_checked' => 1}, {'acknowledged' => 0}, {'scheduled_downtime_depth' => 0} ];
