@@ -3,6 +3,7 @@
 <head>
     <title>Simplestat Monitoring Status</title>
 </head>
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta http-equiv="refresh" content="5"/>
 <style type="text/css">
 <!--/* <![CDATA[ */
